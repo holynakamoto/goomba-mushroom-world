@@ -52,6 +52,31 @@ export default {
 					DEFAULT: 'hsl(var(--card))',
 					foreground: 'hsl(var(--card-foreground))'
 				},
+				// Mario Game Colors
+				mario: {
+					sky: 'hsl(var(--mario-sky))',
+					ground: 'hsl(var(--mario-ground))',
+					brick: 'hsl(var(--mario-brick))',
+					block: 'hsl(var(--mario-block))',
+					pipe: 'hsl(var(--mario-pipe))',
+					coin: 'hsl(var(--mario-coin))',
+					mushroom: 'hsl(var(--mario-mushroom))',
+					goomba: 'hsl(var(--mario-goomba))',
+					mario: 'hsl(var(--mario-mario))',
+					red: 'hsl(var(--mario-red))',
+					green: 'hsl(var(--mario-green))',
+					blue: 'hsl(var(--mario-blue))',
+					white: 'hsl(var(--mario-white))',
+					black: 'hsl(var(--mario-black))',
+					yellow: 'hsl(var(--mario-yellow))',
+				},
+				game: {
+					bg: 'hsl(var(--game-bg))',
+					text: 'hsl(var(--game-text))',
+					shadow: 'hsl(var(--game-shadow))',
+					'ui-bg': 'hsl(var(--game-ui-bg))',
+					'ui-border': 'hsl(var(--game-ui-border))',
+				},
 				sidebar: {
 					DEFAULT: 'hsl(var(--sidebar-background))',
 					foreground: 'hsl(var(--sidebar-foreground))',
