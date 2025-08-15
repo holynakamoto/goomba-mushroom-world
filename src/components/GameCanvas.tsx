@@ -623,6 +623,8 @@ export const GameCanvas = () => {
         const collision = checkCollision(mario, obj);
 
         if (collision) {
+          console.log(`Mario collided with ${obj.type} at position (${obj.x}, ${obj.y})`);
+          
           switch (obj.type) {
             case 'goomba':
               if (mario.vy > 0 && mario.y < obj.y - 5) {
@@ -667,18 +669,26 @@ export const GameCanvas = () => {
 
             case 'block':
             case 'brick':
-              // Check if Mario hits from below
-              if (prevY + mario.height <= obj.y && mario.y + mario.height > obj.y && mario.vy > 0) {
+              console.log(`Block collision detected! Mario Y: ${mario.y}, Block Y: ${obj.y}, Mario prevY: ${prevY}`);
+              console.log(`Mario bottom: ${mario.y + mario.height}, Block top: ${obj.y}`);
+              console.log(`Mario velocity Y: ${mario.vy}, Previous Y: ${prevY}`);
+              
+              // Check if Mario hits from below - fixed logic
+              if (mario.vy > 0 && prevY + mario.height <= obj.y + 5 && mario.y + mario.height > obj.y) {
+                console.log(`Mario hit block from below! Block type: ${obj.type}`);
+                
                 // Mario hits block from below
                 mario.vy = -3; // Bounce effect
                 mario.y = obj.y - mario.height; // Position Mario just below the block
                 
                 if (obj.type === 'block') {
+                  console.log('Question block hit! Spawning item...');
                   // Question block - spawn item and change appearance
                   obj.type = 'brick'; // Change to empty brick
                   
                   // Spawn mushroom or coin
                   if (Math.random() < 0.7) {
+                    console.log('Spawning mushroom...');
                     const mushroom: GameObject = {
                       x: obj.x,
                       y: obj.y - 20,
@@ -690,8 +700,10 @@ export const GameCanvas = () => {
                       vy: -2
                     };
                     objects.push(mushroom);
+                    console.log('Mushroom spawned at:', mushroom.x, mushroom.y);
                     playSound('powerup');
                   } else {
+                    console.log('Spawning coin...');
                     // Spawn coin
                     const coin: GameObject = {
                       x: obj.x + 8,
@@ -703,11 +715,13 @@ export const GameCanvas = () => {
                       vy: -3
                     };
                     objects.push(coin);
+                    console.log('Coin spawned at:', coin.x, coin.y);
                     newState.coins++;
                     newState.score += 200;
                     playSound('coin');
                   }
                 } else if (obj.type === 'brick' && mario.big) {
+                  console.log('Big Mario breaking brick!');
                   // Big Mario can break bricks
                   obj.active = false;
                   newState.score += 50;
