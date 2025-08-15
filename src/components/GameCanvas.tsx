@@ -465,6 +465,47 @@ export const GameCanvas = () => {
       case 'oneup':
         drawMushroom(ctx, obj, camera);
         break;
+        
+      case 'goomba':
+        // Goomba body
+        ctx.fillStyle = '#8B4513';
+        ctx.fillRect(screenX + 2, screenY + 8, 16, 12);
+        
+        // Goomba head
+        ctx.fillStyle = '#A0522D';
+        ctx.beginPath();
+        ctx.arc(screenX + 10, screenY + 6, 8, 0, Math.PI * 2);
+        ctx.fill();
+        
+        // Eyes
+        ctx.fillStyle = '#FFFFFF';
+        ctx.beginPath();
+        ctx.arc(screenX + 7, screenY + 4, 2, 0, Math.PI * 2);
+        ctx.arc(screenX + 13, screenY + 4, 2, 0, Math.PI * 2);
+        ctx.fill();
+        
+        // Eye pupils
+        ctx.fillStyle = '#000000';
+        ctx.beginPath();
+        ctx.arc(screenX + 7, screenY + 4, 1, 0, Math.PI * 2);
+        ctx.arc(screenX + 13, screenY + 4, 1, 0, Math.PI * 2);
+        ctx.fill();
+        
+        // Eyebrows (angry look)
+        ctx.strokeStyle = '#654321';
+        ctx.lineWidth = 2;
+        ctx.beginPath();
+        ctx.moveTo(screenX + 5, screenY + 2);
+        ctx.lineTo(screenX + 8, screenY + 1);
+        ctx.moveTo(screenX + 12, screenY + 1);
+        ctx.lineTo(screenX + 15, screenY + 2);
+        ctx.stroke();
+        
+        // Feet
+        ctx.fillStyle = '#654321';
+        ctx.fillRect(screenX, screenY + 18, 6, 2);
+        ctx.fillRect(screenX + 14, screenY + 18, 6, 2);
+        break;
     }
   };
 
