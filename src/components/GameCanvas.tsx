@@ -549,6 +549,66 @@ export const GameCanvas = () => {
       let onGround = false;
       objects.forEach(obj => {
         if (obj.active && obj.solid && checkCollision(mario, obj)) {
+          console.log(`Solid collision with ${obj.type} at (${obj.x}, ${obj.y}), Mario at (${mario.x}, ${mario.y}), Mario vy: ${mario.vy}, prevY: ${prevY}`);
+          
+          // Special handling for blocks and bricks when hit from below
+          if ((obj.type === 'block' || obj.type === 'brick') && mario.vy > 0 && prevY + mario.height <= obj.y + 5) {
+            console.log(`Mario hit ${obj.type} from below! Triggering block interaction.`);
+            
+            // Mario hits block from below - trigger the block interaction
+            mario.vy = -3; // Bounce effect
+            mario.y = obj.y - mario.height; // Position Mario just below the block
+            
+            if (obj.type === 'block') {
+              console.log('Question block hit! Spawning item...');
+              // Question block - spawn item and change appearance
+              obj.type = 'brick'; // Change to empty brick
+              
+              // Spawn mushroom or coin
+              if (Math.random() < 0.7) {
+                console.log('Spawning mushroom...');
+                const mushroom: GameObject = {
+                  x: obj.x,
+                  y: obj.y - 20,
+                  width: 16,
+                  height: 16,
+                  type: Math.random() < 0.15 ? 'oneup' : 'mushroom',
+                  active: true,
+                  vx: 1.5,
+                  vy: -2
+                };
+                objects.push(mushroom);
+                console.log('Mushroom spawned at:', mushroom.x, mushroom.y);
+                playSound('powerup');
+              } else {
+                console.log('Spawning coin...');
+                // Spawn coin
+                const coin: GameObject = {
+                  x: obj.x + 8,
+                  y: obj.y - 20,
+                  width: 16,
+                  height: 16,
+                  type: 'coin',
+                  active: true,
+                  vy: -3
+                };
+                objects.push(coin);
+                console.log('Coin spawned at:', coin.x, coin.y);
+                newState.coins++;
+                newState.score += 200;
+                playSound('coin');
+              }
+            } else if (obj.type === 'brick' && mario.big) {
+              console.log('Big Mario breaking brick!');
+              // Big Mario can break bricks
+              obj.active = false;
+              newState.score += 50;
+              playSound('powerup');
+            }
+            return; // Don't do normal collision handling
+          }
+          
+          // Normal collision handling for other cases
           // Determine collision direction
           const overlapX = Math.min(mario.x + mario.width - obj.x, obj.x + obj.width - mario.x);
           const overlapY = Math.min(mario.y + mario.height - obj.y, obj.y + obj.height - mario.y);
