@@ -42,6 +42,7 @@ export const GameCanvas = () => {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const animationRef = useRef<number>();
   const keysRef = useRef<Set<string>>(new Set());
+  const musicRef = useRef<AudioContext | null>(null);
   
   const [gameState, setGameState] = useState<GameState>({
     mario: {
@@ -66,6 +67,44 @@ export const GameCanvas = () => {
     gameOver: false,
     keys: new Set()
   });
+
+  // Background music
+  const playBackgroundMusic = useCallback(() => {
+    if (musicRef.current) return; // Already playing
+    
+    const audioContext = new (window.AudioContext || (window as any).webkitAudioContext)();
+    musicRef.current = audioContext;
+    
+    // Simple melody loop for Mario theme
+    const notes = [659, 659, 0, 659, 0, 523, 659, 0, 784]; // E5, E5, rest, E5, rest, C5, E5, rest, G5
+    const noteDuration = 0.3;
+    let currentNote = 0;
+    
+    const playNote = () => {
+      if (!musicRef.current) return;
+      
+      const oscillator = audioContext.createOscillator();
+      const gainNode = audioContext.createGain();
+      
+      oscillator.connect(gainNode);
+      gainNode.connect(audioContext.destination);
+      
+      if (notes[currentNote] > 0) {
+        oscillator.frequency.setValueAtTime(notes[currentNote], audioContext.currentTime);
+        oscillator.type = 'square';
+        gainNode.gain.setValueAtTime(0.1, audioContext.currentTime);
+        gainNode.gain.exponentialRampToValueAtTime(0.01, audioContext.currentTime + noteDuration * 0.8);
+        
+        oscillator.start(audioContext.currentTime);
+        oscillator.stop(audioContext.currentTime + noteDuration * 0.8);
+      }
+      
+      currentNote = (currentNote + 1) % notes.length;
+      setTimeout(playNote, noteDuration * 1000);
+    };
+    
+    playNote();
+  }, []);
 
   // Sound effects
   const playSound = (type: 'jump' | 'coin' | 'powerup' | 'stomp' | 'death') => {
@@ -587,22 +626,52 @@ export const GameCanvas = () => {
 
             case 'block':
             case 'brick':
-              if (mario.vy > 0 && mario.y < obj.y - 5) {
+              // Check if Mario hits from below
+              if (prevY + mario.height <= obj.y && mario.y + mario.height > obj.y && mario.vy > 0) {
                 // Mario hits block from below
-                obj.active = false;
-                // Spawn mushroom
-                const mushroom: GameObject = {
-                  x: obj.x,
-                  y: obj.y - 20,
-                  width: 16,
-                  height: 16,
-                  type: Math.random() < 0.15 ? 'oneup' : 'mushroom',
-                  active: true,
-                  vx: 1.5
-                };
-                objects.push(mushroom);
-                mario.vy = -2; // Small bounce
-                playSound('powerup');
+                mario.vy = -3; // Bounce effect
+                mario.y = obj.y - mario.height; // Position Mario just below the block
+                
+                if (obj.type === 'block') {
+                  // Question block - spawn item and change appearance
+                  obj.type = 'brick'; // Change to empty brick
+                  
+                  // Spawn mushroom or coin
+                  if (Math.random() < 0.7) {
+                    const mushroom: GameObject = {
+                      x: obj.x,
+                      y: obj.y - 20,
+                      width: 16,
+                      height: 16,
+                      type: Math.random() < 0.15 ? 'oneup' : 'mushroom',
+                      active: true,
+                      vx: 1.5,
+                      vy: -2
+                    };
+                    objects.push(mushroom);
+                    playSound('powerup');
+                  } else {
+                    // Spawn coin
+                    const coin: GameObject = {
+                      x: obj.x + 8,
+                      y: obj.y - 20,
+                      width: 16,
+                      height: 16,
+                      type: 'coin',
+                      active: true,
+                      vy: -3
+                    };
+                    objects.push(coin);
+                    newState.coins++;
+                    newState.score += 200;
+                    playSound('coin');
+                  }
+                } else if (obj.type === 'brick' && mario.big) {
+                  // Big Mario can break bricks
+                  obj.active = false;
+                  newState.score += 50;
+                  playSound('powerup');
+                }
               }
               break;
 
@@ -802,6 +871,7 @@ export const GameCanvas = () => {
 
   const startGame = () => {
     initializeLevel();
+    playBackgroundMusic();
   };
 
   const resetGame = () => {
