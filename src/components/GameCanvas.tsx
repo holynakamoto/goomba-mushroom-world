@@ -552,27 +552,28 @@ export const GameCanvas = () => {
           console.log(`Solid collision with ${obj.type} at (${obj.x}, ${obj.y}), Mario at (${mario.x}, ${mario.y}), Mario vy: ${mario.vy}, prevY: ${prevY}`);
           
           // Special handling for blocks and bricks when hit from below
-          if ((obj.type === 'block' || obj.type === 'brick') && mario.vy > 0 && prevY + mario.height <= obj.y + 5) {
+          if ((obj.type === 'block' || obj.type === 'brick') && mario.vy < 0 && mario.y + mario.height > obj.y && prevY + mario.height <= obj.y + 5) {
             console.log(`Mario hit ${obj.type} from below! Triggering block interaction.`);
             
             // Mario hits block from below - trigger the block interaction
-            mario.vy = -3; // Bounce effect
-            mario.y = obj.y - mario.height; // Position Mario just below the block
+            mario.vy = 3; // Bounce downward
+            mario.y = obj.y + obj.height; // Position Mario just below the block
             
             if (obj.type === 'block') {
               console.log('Question block hit! Spawning item...');
               // Question block - spawn item and change appearance
               obj.type = 'brick'; // Change to empty brick
               
-              // Spawn mushroom or coin
-              if (Math.random() < 0.7) {
-                console.log('Spawning mushroom...');
+              // Determine what to spawn based on block position
+              if (obj.x === 352) {
+                // Second question block always spawns mushroom
+                console.log('Spawning mushroom from specific block...');
                 const mushroom: GameObject = {
                   x: obj.x,
                   y: obj.y - 20,
                   width: 16,
                   height: 16,
-                  type: Math.random() < 0.15 ? 'oneup' : 'mushroom',
+                  type: 'mushroom',
                   active: true,
                   vx: 1.5,
                   vy: -2
@@ -581,22 +582,41 @@ export const GameCanvas = () => {
                 console.log('Mushroom spawned at:', mushroom.x, mushroom.y);
                 playSound('powerup');
               } else {
-                console.log('Spawning coin...');
-                // Spawn coin
-                const coin: GameObject = {
-                  x: obj.x + 8,
-                  y: obj.y - 20,
-                  width: 16,
-                  height: 16,
-                  type: 'coin',
-                  active: true,
-                  vy: -3
-                };
-                objects.push(coin);
-                console.log('Coin spawned at:', coin.x, coin.y);
-                newState.coins++;
-                newState.score += 200;
-                playSound('coin');
+                // Other blocks spawn coins or mushrooms randomly
+                if (Math.random() < 0.3) {
+                  console.log('Spawning mushroom...');
+                  const mushroom: GameObject = {
+                    x: obj.x,
+                    y: obj.y - 20,
+                    width: 16,
+                    height: 16,
+                    type: Math.random() < 0.15 ? 'oneup' : 'mushroom',
+                    active: true,
+                    vx: 1.5,
+                    vy: -2
+                  };
+                  objects.push(mushroom);
+                  console.log('Mushroom spawned at:', mushroom.x, mushroom.y);
+                  playSound('powerup');
+                } else {
+                  console.log('Spawning coin...');
+                  // Spawn coin with upward velocity for animation
+                  const coin: GameObject = {
+                    x: obj.x + 8,
+                    y: obj.y - 20,
+                    width: 16,
+                    height: 16,
+                    type: 'coin',
+                    active: true,
+                    vy: -8, // Strong upward velocity
+                    vx: 0
+                  };
+                  objects.push(coin);
+                  console.log('Coin spawned at:', coin.x, coin.y);
+                  newState.coins++;
+                  newState.score += 200;
+                  playSound('coin');
+                }
               }
             } else if (obj.type === 'brick' && mario.big) {
               console.log('Big Mario breaking brick!');
@@ -729,65 +749,8 @@ export const GameCanvas = () => {
 
             case 'block':
             case 'brick':
-              console.log(`Block collision detected! Mario Y: ${mario.y}, Block Y: ${obj.y}, Mario prevY: ${prevY}`);
-              console.log(`Mario bottom: ${mario.y + mario.height}, Block top: ${obj.y}`);
-              console.log(`Mario velocity Y: ${mario.vy}, Previous Y: ${prevY}`);
-              
-              // Check if Mario hits from below - fixed logic
-              if (mario.vy > 0 && prevY + mario.height <= obj.y + 5 && mario.y + mario.height > obj.y) {
-                console.log(`Mario hit block from below! Block type: ${obj.type}`);
-                
-                // Mario hits block from below
-                mario.vy = -3; // Bounce effect
-                mario.y = obj.y - mario.height; // Position Mario just below the block
-                
-                if (obj.type === 'block') {
-                  console.log('Question block hit! Spawning item...');
-                  // Question block - spawn item and change appearance
-                  obj.type = 'brick'; // Change to empty brick
-                  
-                  // Spawn mushroom or coin
-                  if (Math.random() < 0.7) {
-                    console.log('Spawning mushroom...');
-                    const mushroom: GameObject = {
-                      x: obj.x,
-                      y: obj.y - 20,
-                      width: 16,
-                      height: 16,
-                      type: Math.random() < 0.15 ? 'oneup' : 'mushroom',
-                      active: true,
-                      vx: 1.5,
-                      vy: -2
-                    };
-                    objects.push(mushroom);
-                    console.log('Mushroom spawned at:', mushroom.x, mushroom.y);
-                    playSound('powerup');
-                  } else {
-                    console.log('Spawning coin...');
-                    // Spawn coin
-                    const coin: GameObject = {
-                      x: obj.x + 8,
-                      y: obj.y - 20,
-                      width: 16,
-                      height: 16,
-                      type: 'coin',
-                      active: true,
-                      vy: -3
-                    };
-                    objects.push(coin);
-                    console.log('Coin spawned at:', coin.x, coin.y);
-                    newState.coins++;
-                    newState.score += 200;
-                    playSound('coin');
-                  }
-                } else if (obj.type === 'brick' && mario.big) {
-                  console.log('Big Mario breaking brick!');
-                  // Big Mario can break bricks
-                  obj.active = false;
-                  newState.score += 50;
-                  playSound('powerup');
-                }
-              }
+              // Block collision is now handled in the solid collision section above
+              // This prevents duplicate handling and ensures proper physics
               break;
 
             case 'mushroom':
@@ -817,7 +780,7 @@ export const GameCanvas = () => {
         }
       });
 
-      // Update mushrooms and power-ups
+      // Update mushrooms, power-ups, and spawned coins
       objects.forEach(obj => {
         if ((obj.type === 'mushroom' || obj.type === 'oneup') && obj.active) {
           obj.x += obj.vx || 0;
@@ -836,6 +799,18 @@ export const GameCanvas = () => {
               obj.vx = -(obj.vx || 0);
             }
           });
+        }
+
+        // Update spawned coins (from blocks) with physics
+        if (obj.type === 'coin' && obj.hasOwnProperty('vy') && obj.active) {
+          obj.vy = (obj.vy || 0) + GRAVITY;
+          obj.y += obj.vy || 0;
+          obj.x += obj.vx || 0;
+          
+          // Remove coin after it falls for a while or goes off screen
+          if (obj.y > 450 || (obj.vy && obj.vy > 5)) {
+            obj.active = false;
+          }
         }
       });
 
