@@ -552,7 +552,7 @@ export const GameCanvas = () => {
           console.log(`Solid collision with ${obj.type} at (${obj.x}, ${obj.y}), Mario at (${mario.x}, ${mario.y}), Mario vy: ${mario.vy}, prevY: ${prevY}`);
           
           // Special handling for blocks and bricks when hit from below
-          if ((obj.type === 'block' || obj.type === 'brick') && mario.vy < 0 && mario.y + mario.height > obj.y && prevY + mario.height <= obj.y + 5) {
+          if ((obj.type === 'block' || obj.type === 'brick') && mario.vy < 0 && prevY >= obj.y + obj.height - 5 && mario.y <= obj.y + obj.height) {
             console.log(`Mario hit ${obj.type} from below! Triggering block interaction.`);
             
             // Mario hits block from below - trigger the block interaction
