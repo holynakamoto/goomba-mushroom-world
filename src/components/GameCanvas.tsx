@@ -7,7 +7,7 @@ interface GameObject {
   y: number;
   width: number;
   height: number;
-  type: 'mario' | 'goomba' | 'mushroom' | 'coin' | 'block' | 'pipe' | 'ground' | 'oneup' | 'brick' | 'flag' | 'fireflower' | 'fireball';
+  type: 'mario' | 'goomba' | 'mushroom' | 'coin' | 'block' | 'pipe' | 'ground' | 'oneup' | 'brick' | 'flag' | 'fireflower' | 'fireball' | 'piranha' | 'koopa' | 'starman' | 'elevator';
   active: boolean;
   vx?: number;
   vy?: number;
@@ -18,6 +18,12 @@ interface GameObject {
   fire?: boolean;
   solid?: boolean;
   bounce?: number;
+  shell?: boolean;
+  moving?: boolean;
+  minY?: number;
+  maxY?: number;
+  invincible?: number;
+  broken?: boolean;
 }
 
 interface GameState {
@@ -32,6 +38,7 @@ interface GameState {
   gameOver: boolean;
   keys: Set<string>;
   currentLevel: number;
+  time: number;
 }
 
 const CANVAS_WIDTH = 800;
@@ -46,6 +53,7 @@ export const GameCanvas = () => {
   const animationRef = useRef<number>();
   const keysRef = useRef<Set<string>>(new Set());
   const musicRef = useRef<AudioContext | null>(null);
+  const gameLoopRef = useRef<NodeJS.Timeout>();
   
   const [gameState, setGameState] = useState<GameState>({
     mario: {
@@ -59,7 +67,8 @@ export const GameCanvas = () => {
       vy: 0,
       grounded: false,
       big: false,
-      fire: false
+      fire: false,
+      invincible: 0
     },
     objects: [],
     camera: { x: 0, y: 0 },
@@ -70,19 +79,21 @@ export const GameCanvas = () => {
     gameWon: false,
     gameOver: false,
     keys: new Set(),
-    currentLevel: 1
+    currentLevel: 1,
+    time: 400
   });
 
   // Background music
   const playBackgroundMusic = useCallback(() => {
-    if (musicRef.current) return; // Already playing
+    if (musicRef.current) return;
     
     const audioContext = new (window.AudioContext || (window as any).webkitAudioContext)();
     musicRef.current = audioContext;
     
-    // Simple melody loop for Mario theme
-    const notes = [659, 659, 0, 659, 0, 523, 659, 0, 784]; // E5, E5, rest, E5, rest, C5, E5, rest, G5
-    const noteDuration = 0.3;
+    const notes = gameState.currentLevel === 2 ? 
+      [330, 330, 0, 330, 0, 262, 330, 0, 392] : // Underground theme
+      [659, 659, 0, 659, 0, 523, 659, 0, 784]; // Overworld theme
+    const noteDuration = gameState.currentLevel === 2 ? 0.4 : 0.3;
     let currentNote = 0;
     
     const playNote = () => {
@@ -109,11 +120,10 @@ export const GameCanvas = () => {
     };
     
     playNote();
-  }, []);
+  }, [gameState.currentLevel]);
 
   // Sound effects
-  const playSound = (type: 'jump' | 'coin' | 'powerup' | 'stomp' | 'death') => {
-    // Create simple beep sounds using Web Audio API
+  const playSound = (type: 'jump' | 'coin' | 'powerup' | 'stomp' | 'death' | 'break' | 'fireball' | 'shrink') => {
     const audioContext = new (window.AudioContext || (window as any).webkitAudioContext)();
     const oscillator = audioContext.createOscillator();
     const gainNode = audioContext.createGain();
@@ -126,24 +136,36 @@ export const GameCanvas = () => {
     
     switch (type) {
       case 'jump':
-        frequency = 523; // C5
+        frequency = 523;
         duration = 0.15;
         break;
       case 'coin':
-        frequency = 698; // F5
+        frequency = 698;
         duration = 0.1;
         break;
       case 'powerup':
-        frequency = 880; // A5
+        frequency = 880;
         duration = 0.3;
         break;
       case 'stomp':
-        frequency = 220; // A3
+        frequency = 220;
         duration = 0.1;
         break;
       case 'death':
-        frequency = 131; // C3
+        frequency = 131;
         duration = 0.5;
+        break;
+      case 'break':
+        frequency = 180;
+        duration = 0.2;
+        break;
+      case 'fireball':
+        frequency = 800;
+        duration = 0.1;
+        break;
+      case 'shrink':
+        frequency = 200;
+        duration = 0.4;
         break;
     }
     
@@ -157,7 +179,7 @@ export const GameCanvas = () => {
     oscillator.stop(audioContext.currentTime + duration);
   };
 
-  // Initialize level
+  // Initialize World 1-1
   const initializeLevel = useCallback(() => {
     const levelObjects: GameObject[] = [
       // Ground blocks
@@ -181,14 +203,16 @@ export const GameCanvas = () => {
       { x: 320, y: 272, width: 32, height: 32, type: 'brick', active: true, solid: true },
       { x: 384, y: 272, width: 32, height: 32, type: 'brick', active: true, solid: true },
       { x: 416, y: 272, width: 32, height: 32, type: 'brick', active: true, solid: true },
+      { x: 480, y: 272, width: 32, height: 32, type: 'brick', active: true, solid: true },
+      { x: 512, y: 272, width: 32, height: 32, type: 'brick', active: true, solid: true },
       
-      // Pipes - these are solid obstacles
+      // Pipes
       { x: 448, y: 304, width: 64, height: 64, type: 'pipe', active: true, solid: true },
       { x: 608, y: 272, width: 64, height: 96, type: 'pipe', active: true, solid: true },
       { x: 928, y: 240, width: 64, height: 128, type: 'pipe', active: true, solid: true },
       { x: 1344, y: 208, width: 64, height: 160, type: 'pipe', active: true, solid: true },
       
-      // Goombas positioned at ground level
+      // Goombas
       { x: 300, y: 336, width: 20, height: 20, type: 'goomba', active: true, vx: -GOOMBA_SPEED, direction: -1 },
       { x: 400, y: 336, width: 20, height: 20, type: 'goomba', active: true, vx: -GOOMBA_SPEED, direction: -1 },
       { x: 520, y: 336, width: 20, height: 20, type: 'goomba', active: true, vx: GOOMBA_SPEED, direction: 1 },
@@ -220,8 +244,10 @@ export const GameCanvas = () => {
         vy: 0,
         grounded: false,
         big: false,
+        fire: false,
         width: 20,
-        height: 20
+        height: 20,
+        invincible: 0
       },
       camera: { x: 0, y: 0 },
       score: 0,
@@ -229,7 +255,9 @@ export const GameCanvas = () => {
       gameRunning: true,
       gameWon: false,
       gameOver: false,
-      keys: new Set()
+      keys: new Set(),
+      currentLevel: 1,
+      time: 400
     }));
   }, []);
 
@@ -237,7 +265,7 @@ export const GameCanvas = () => {
   const initializeWorld2 = useCallback(() => {
     const levelObjects: GameObject[] = [
       // Ground blocks (underground style)
-      ...Array.from({ length: 60 }, (_, i) => ({
+      ...Array.from({ length: 80 }, (_, i) => ({
         x: i * 32,
         y: 368,
         width: 32,
@@ -248,7 +276,7 @@ export const GameCanvas = () => {
       })),
       
       // Ceiling blocks (underground style)
-      ...Array.from({ length: 60 }, (_, i) => ({
+      ...Array.from({ length: 80 }, (_, i) => ({
         x: i * 32,
         y: 0,
         width: 32,
@@ -269,39 +297,75 @@ export const GameCanvas = () => {
         solid: true
       })),
       
-      // Underground question blocks
-      { x: 192, y: 272, width: 32, height: 32, type: 'block', active: true, solid: true },
-      { x: 288, y: 272, width: 32, height: 32, type: 'block', active: true, solid: true },
-      { x: 544, y: 272, width: 32, height: 32, type: 'block', active: true, solid: true },
-      { x: 800, y: 272, width: 32, height: 32, type: 'block', active: true, solid: true },
+      // Starting area question blocks
+      { x: 128, y: 272, width: 32, height: 32, type: 'block', active: true, solid: true },
+      { x: 160, y: 272, width: 32, height: 32, type: 'block', active: true, solid: true },
       
-      // Brick maze
-      { x: 384, y: 304, width: 32, height: 32, type: 'brick', active: true, solid: true },
-      { x: 416, y: 304, width: 32, height: 32, type: 'brick', active: true, solid: true },
-      { x: 448, y: 272, width: 32, height: 32, type: 'brick', active: true, solid: true },
-      { x: 448, y: 304, width: 32, height: 32, type: 'brick', active: true, solid: true },
-      { x: 480, y: 240, width: 32, height: 32, type: 'brick', active: true, solid: true },
-      { x: 480, y: 272, width: 32, height: 32, type: 'brick', active: true, solid: true },
+      // Brick blocks with starman
+      { x: 192, y: 272, width: 32, height: 32, type: 'brick', active: true, solid: true },
+      { x: 224, y: 272, width: 32, height: 32, type: 'brick', active: true, solid: true },
+      { x: 256, y: 272, width: 32, height: 32, type: 'brick', active: true, solid: true }, // Contains starman
+      
+      // Floating platform with coin blocks
+      { x: 384, y: 240, width: 32, height: 32, type: 'brick', active: true, solid: true },
+      { x: 416, y: 240, width: 32, height: 32, type: 'brick', active: true, solid: true },
+      { x: 448, y: 240, width: 32, height: 32, type: 'brick', active: true, solid: true },
+      
+      // Pipes with Piranha Plants
+      { x: 544, y: 304, width: 64, height: 64, type: 'pipe', active: true, solid: true },
+      { x: 544, y: 280, width: 16, height: 16, type: 'piranha', active: true, vx: 0, vy: -1, minY: 264, maxY: 304 },
+      
+      // More question blocks
+      { x: 672, y: 272, width: 32, height: 32, type: 'block', active: true, solid: true },
+      { x: 704, y: 272, width: 32, height: 32, type: 'block', active: true, solid: true },
+      { x: 736, y: 272, width: 32, height: 32, type: 'block', active: true, solid: true },
+      
+      // Another pipe with Piranha Plant
+      { x: 832, y: 304, width: 64, height: 64, type: 'pipe', active: true, solid: true },
+      { x: 832, y: 280, width: 16, height: 16, type: 'piranha', active: true, vx: 0, vy: -1, minY: 264, maxY: 304 },
+      
+      // Brick staircase
+      { x: 960, y: 336, width: 32, height: 32, type: 'brick', active: true, solid: true },
+      { x: 992, y: 304, width: 32, height: 32, type: 'brick', active: true, solid: true },
+      { x: 1024, y: 272, width: 32, height: 32, type: 'brick', active: true, solid: true },
+      { x: 1056, y: 240, width: 32, height: 32, type: 'brick', active: true, solid: true },
+      
+      // Koopa Troopas
+      { x: 1120, y: 336, width: 20, height: 20, type: 'koopa', active: true, vx: -1, direction: -1, shell: false },
+      { x: 1200, y: 336, width: 20, height: 20, type: 'koopa', active: true, vx: 1, direction: 1, shell: false },
+      
+      // Moving elevators
+      { x: 1280, y: 320, width: 64, height: 16, type: 'elevator', active: true, vy: -1, minY: 240, maxY: 320, moving: true },
+      { x: 1400, y: 240, width: 64, height: 16, type: 'elevator', active: true, vy: 1, minY: 240, maxY: 320, moving: true },
+      
+      // Final pipe with Piranha Plant
+      { x: 1520, y: 304, width: 64, height: 64, type: 'pipe', active: true, solid: true },
+      { x: 1520, y: 280, width: 16, height: 16, type: 'piranha', active: true, vx: 0, vy: -1, minY: 264, maxY: 304 },
       
       // Underground Goombas
       { x: 250, y: 336, width: 20, height: 20, type: 'goomba', active: true, vx: -GOOMBA_SPEED, direction: -1 },
-      { x: 350, y: 336, width: 20, height: 20, type: 'goomba', active: true, vx: GOOMBA_SPEED, direction: 1 },
-      { x: 600, y: 336, width: 20, height: 20, type: 'goomba', active: true, vx: -GOOMBA_SPEED, direction: -1 },
-      { x: 850, y: 336, width: 20, height: 20, type: 'goomba', active: true, vx: GOOMBA_SPEED, direction: 1 },
-      { x: 1100, y: 336, width: 20, height: 20, type: 'goomba', active: true, vx: -GOOMBA_SPEED, direction: -1 },
+      { x: 500, y: 336, width: 20, height: 20, type: 'goomba', active: true, vx: GOOMBA_SPEED, direction: 1 },
+      { x: 780, y: 336, width: 20, height: 20, type: 'goomba', active: true, vx: -GOOMBA_SPEED, direction: -1 },
+      { x: 1350, y: 336, width: 20, height: 20, type: 'goomba', active: true, vx: GOOMBA_SPEED, direction: 1 },
       
       // Underground coins
       { x: 160, y: 200, width: 16, height: 16, type: 'coin', active: true },
-      { x: 320, y: 200, width: 16, height: 16, type: 'coin', active: true },
-      { x: 576, y: 200, width: 16, height: 16, type: 'coin', active: true },
-      { x: 832, y: 200, width: 16, height: 16, type: 'coin', active: true },
-      { x: 1000, y: 150, width: 16, height: 16, type: 'coin', active: true },
+      { x: 400, y: 180, width: 16, height: 16, type: 'coin', active: true },
+      { x: 432, y: 180, width: 16, height: 16, type: 'coin', active: true },
+      { x: 688, y: 200, width: 16, height: 16, type: 'coin', active: true },
+      { x: 720, y: 200, width: 16, height: 16, type: 'coin', active: true },
+      { x: 1300, y: 150, width: 16, height: 16, type: 'coin', active: true },
       
-      // Exit pipe (leads to end)
-      { x: 1200, y: 304, width: 64, height: 64, type: 'pipe', active: true, solid: true },
+      // Exit area - high platform leading to warp zone
+      { x: 1600, y: 208, width: 32, height: 32, type: 'brick', active: true, solid: true },
+      { x: 1632, y: 208, width: 32, height: 32, type: 'brick', active: true, solid: true },
+      { x: 1664, y: 208, width: 32, height: 32, type: 'brick', active: true, solid: true },
       
-      // Flag at the end
-      { x: 1300, y: 200, width: 32, height: 168, type: 'flag', active: true, solid: true },
+      // Final exit pipe (leads to flag)
+      { x: 1728, y: 144, width: 64, height: 224, type: 'pipe', active: true, solid: true },
+      
+      // Flag at the very end (after warp zone area)
+      { x: 1900, y: 200, width: 32, height: 168, type: 'flag', active: true, solid: true },
     ];
 
     setGameState(prev => ({
@@ -316,7 +380,9 @@ export const GameCanvas = () => {
         grounded: false
       },
       camera: { x: 0, y: 0 },
-      gameRunning: true
+      gameRunning: true,
+      currentLevel: 2,
+      time: 400
     }));
   }, []);
 
@@ -333,6 +399,11 @@ export const GameCanvas = () => {
     const screenX = mario.x - camera.x;
     const screenY = mario.y - camera.y;
     const size = mario.big ? 1.2 : 1;
+    
+    // Invincibility flashing effect
+    if (mario.invincible && mario.invincible > 0 && Math.floor(Date.now() / 100) % 2) {
+      return; // Skip drawing for flashing effect
+    }
     
     // Mario overalls
     ctx.fillStyle = '#2E86AB';
@@ -371,95 +442,18 @@ export const GameCanvas = () => {
     ctx.fillRect(screenX + 12, screenY + mario.height - 4, 6, 4);
   };
 
-  // Enhanced Goomba drawing
-  const drawGoomba = (ctx: CanvasRenderingContext2D, goomba: GameObject, camera: { x: number; y: number }) => {
-    const screenX = goomba.x - camera.x;
-    const screenY = goomba.y - camera.y;
-    
-    // Goomba body
-    ctx.fillStyle = '#8B4513';
-    ctx.beginPath();
-    ctx.roundRect(screenX, screenY + 4, goomba.width, goomba.height - 4, 4);
-    ctx.fill();
-    
-    // Goomba head
-    ctx.fillStyle = '#CD853F';
-    ctx.beginPath();
-    ctx.roundRect(screenX + 2, screenY, goomba.width - 4, 12, 6);
-    ctx.fill();
-    
-    // Eyes
-    ctx.fillStyle = '#000000';
-    ctx.fillRect(screenX + 4, screenY + 3, 3, 3);
-    ctx.fillRect(screenX + 13, screenY + 3, 3, 3);
-    
-    // Angry eyebrows
-    ctx.fillStyle = '#654321';
-    ctx.fillRect(screenX + 3, screenY + 1, 5, 2);
-    ctx.fillRect(screenX + 12, screenY + 1, 5, 2);
-    
-    // Teeth
-    ctx.fillStyle = '#FFFFFF';
-    ctx.fillRect(screenX + 7, screenY + 8, 2, 2);
-    ctx.fillRect(screenX + 11, screenY + 8, 2, 2);
-    
-    // Feet
-    ctx.fillStyle = '#654321';
-    ctx.fillRect(screenX + 1, screenY + goomba.height - 2, 4, 2);
-    ctx.fillRect(screenX + goomba.width - 5, screenY + goomba.height - 2, 4, 2);
-  };
-
-  // Enhanced Mushroom drawing
-  const drawMushroom = (ctx: CanvasRenderingContext2D, mushroom: GameObject, camera: { x: number; y: number }) => {
-    const screenX = mushroom.x - camera.x;
-    const screenY = mushroom.y - camera.y;
-    
-    // Mushroom cap
-    ctx.fillStyle = mushroom.type === 'oneup' ? '#2ECC71' : '#E74C3C';
-    ctx.beginPath();
-    ctx.roundRect(screenX - 2, screenY, mushroom.width + 4, 12, 6);
-    ctx.fill();
-    
-    // Mushroom stem
-    ctx.fillStyle = '#F4D03F';
-    ctx.fillRect(screenX + 4, screenY + 8, 8, 8);
-    
-    // Spots
-    ctx.fillStyle = '#FFFFFF';
-    if (mushroom.type === 'oneup') {
-      // 1UP pattern - green mushroom with "1UP" dots
-      ctx.beginPath();
-      ctx.arc(screenX + 5, screenY + 4, 2, 0, Math.PI * 2);
-      ctx.arc(screenX + 11, screenY + 4, 2, 0, Math.PI * 2);
-      ctx.arc(screenX + 8, screenY + 7, 1.5, 0, Math.PI * 2);
-      ctx.fill();
-    } else {
-      // Regular mushroom spots
-      ctx.beginPath();
-      ctx.arc(screenX + 4, screenY + 4, 2, 0, Math.PI * 2);
-      ctx.arc(screenX + 12, screenY + 4, 2, 0, Math.PI * 2);
-      ctx.arc(screenX + 8, screenY + 7, 1.5, 0, Math.PI * 2);
-      ctx.fill();
-    }
-  };
-
   const drawObject = (ctx: CanvasRenderingContext2D, obj: GameObject, camera: { x: number; y: number }) => {
     const screenX = obj.x - camera.x;
     const screenY = obj.y - camera.y;
     
     switch (obj.type) {
       case 'ground':
-        ctx.fillStyle = '#8B4513';
+        // Different colors for different levels
+        ctx.fillStyle = gameState.currentLevel === 2 ? '#4A4A4A' : '#8B4513';
         ctx.fillRect(screenX, screenY, obj.width, obj.height);
-        ctx.strokeStyle = '#654321';
+        ctx.strokeStyle = gameState.currentLevel === 2 ? '#2A2A2A' : '#654321';
         ctx.lineWidth = 2;
         ctx.strokeRect(screenX, screenY, obj.width, obj.height);
-        // Ground texture
-        ctx.fillStyle = '#A0522D';
-        ctx.fillRect(screenX + 4, screenY + 4, 8, 8);
-        ctx.fillRect(screenX + 20, screenY + 4, 8, 8);
-        ctx.fillRect(screenX + 4, screenY + 20, 8, 8);
-        ctx.fillRect(screenX + 20, screenY + 20, 8, 8);
         break;
         
       case 'block':
@@ -476,13 +470,17 @@ export const GameCanvas = () => {
         break;
         
       case 'brick':
-        ctx.fillStyle = '#D2691E';
+        if (obj.broken) {
+          // Don't draw broken bricks
+          return;
+        }
+        ctx.fillStyle = gameState.currentLevel === 2 ? '#8B4513' : '#D2691E';
         ctx.fillRect(screenX, screenY, obj.width, obj.height);
-        ctx.strokeStyle = '#A0522D';
+        ctx.strokeStyle = gameState.currentLevel === 2 ? '#654321' : '#A0522D';
         ctx.lineWidth = 2;
         ctx.strokeRect(screenX, screenY, obj.width, obj.height);
         // Brick pattern
-        ctx.strokeStyle = '#8B4513';
+        ctx.strokeStyle = gameState.currentLevel === 2 ? '#5D4037' : '#8B4513';
         ctx.lineWidth = 1;
         ctx.beginPath();
         ctx.moveTo(screenX + 16, screenY);
@@ -508,12 +506,7 @@ export const GameCanvas = () => {
         
         // Pipe opening
         ctx.fillStyle = '#1B4F72';
-        ctx.fillRect(screenX + 8, screenY + 16, 48, 16);
-        
-        // Pipe highlights
-        ctx.fillStyle = '#58D68D';
-        ctx.fillRect(screenX + 4, screenY + 20, 8, obj.height - 20);
-        ctx.fillRect(screenX + obj.width - 12, screenY + 20, 8, obj.height - 20);
+        ctx.fillRect(screenX + 8, screenY + 16, obj.width - 16, 16);
         break;
         
       case 'coin':
@@ -521,7 +514,6 @@ export const GameCanvas = () => {
         const time = Date.now() / 200;
         const scale = 0.8 + 0.2 * Math.sin(time);
         const coinSize = 12 * scale;
-        const offsetX = (16 - coinSize) / 2;
         
         ctx.fillStyle = '#F1C40F';
         ctx.beginPath();
@@ -555,7 +547,31 @@ export const GameCanvas = () => {
         
       case 'mushroom':
       case 'oneup':
-        drawMushroom(ctx, obj, camera);
+        // Mushroom cap
+        ctx.fillStyle = obj.type === 'oneup' ? '#2ECC71' : '#E74C3C';
+        ctx.beginPath();
+        ctx.roundRect(screenX - 2, screenY, obj.width + 4, 12, 6);
+        ctx.fill();
+        
+        // Mushroom stem
+        ctx.fillStyle = '#F4D03F';
+        ctx.fillRect(screenX + 4, screenY + 8, 8, 8);
+        
+        // Spots
+        ctx.fillStyle = '#FFFFFF';
+        if (obj.type === 'oneup') {
+          ctx.beginPath();
+          ctx.arc(screenX + 5, screenY + 4, 2, 0, Math.PI * 2);
+          ctx.arc(screenX + 11, screenY + 4, 2, 0, Math.PI * 2);
+          ctx.arc(screenX + 8, screenY + 7, 1.5, 0, Math.PI * 2);
+          ctx.fill();
+        } else {
+          ctx.beginPath();
+          ctx.arc(screenX + 4, screenY + 4, 2, 0, Math.PI * 2);
+          ctx.arc(screenX + 12, screenY + 4, 2, 0, Math.PI * 2);
+          ctx.arc(screenX + 8, screenY + 7, 1.5, 0, Math.PI * 2);
+          ctx.fill();
+        }
         break;
         
       case 'goomba':
@@ -597,6 +613,110 @@ export const GameCanvas = () => {
         ctx.fillStyle = '#654321';
         ctx.fillRect(screenX, screenY + 18, 6, 2);
         ctx.fillRect(screenX + 14, screenY + 18, 6, 2);
+        break;
+        
+      case 'koopa':
+        if (obj.shell) {
+          // Shell form
+          ctx.fillStyle = '#2ECC71';
+          ctx.beginPath();
+          ctx.arc(screenX + 10, screenY + 10, 10, 0, Math.PI * 2);
+          ctx.fill();
+          ctx.strokeStyle = '#27AE60';
+          ctx.lineWidth = 2;
+          ctx.stroke();
+          
+          // Shell pattern
+          ctx.fillStyle = '#F1C40F';
+          ctx.fillRect(screenX + 6, screenY + 6, 8, 8);
+        } else {
+          // Normal Koopa
+          ctx.fillStyle = '#2ECC71';
+          ctx.fillRect(screenX + 2, screenY + 8, 16, 12);
+          
+          // Shell
+          ctx.fillStyle = '#27AE60';
+          ctx.beginPath();
+          ctx.arc(screenX + 10, screenY + 6, 8, 0, Math.PI * 2);
+          ctx.fill();
+          
+          // Head
+          ctx.fillStyle = '#F1C40F';
+          ctx.fillRect(screenX + 6, screenY + 2, 8, 6);
+          
+          // Eyes
+          ctx.fillStyle = '#000000';
+          ctx.fillRect(screenX + 7, screenY + 3, 2, 2);
+          ctx.fillRect(screenX + 11, screenY + 3, 2, 2);
+        }
+        break;
+        
+      case 'piranha':
+        // Piranha Plant head
+        ctx.fillStyle = '#E74C3C';
+        ctx.beginPath();
+        ctx.arc(screenX + 8, screenY + 8, 8, 0, Math.PI * 2);
+        ctx.fill();
+        
+        // Mouth
+        ctx.fillStyle = '#000000';
+        ctx.fillRect(screenX + 4, screenY + 6, 8, 4);
+        
+        // Teeth
+        ctx.fillStyle = '#FFFFFF';
+        ctx.fillRect(screenX + 5, screenY + 6, 1, 2);
+        ctx.fillRect(screenX + 7, screenY + 6, 1, 2);
+        ctx.fillRect(screenX + 9, screenY + 6, 1, 2);
+        ctx.fillRect(screenX + 11, screenY + 6, 1, 2);
+        
+        // Spots
+        ctx.fillStyle = '#FFFFFF';
+        ctx.beginPath();
+        ctx.arc(screenX + 5, screenY + 3, 1, 0, Math.PI * 2);
+        ctx.arc(screenX + 11, screenY + 3, 1, 0, Math.PI * 2);
+        ctx.fill();
+        break;
+        
+      case 'elevator':
+        // Moving platform
+        ctx.fillStyle = '#8B4513';
+        ctx.fillRect(screenX, screenY, obj.width, obj.height);
+        ctx.strokeStyle = '#654321';
+        ctx.lineWidth = 2;
+        ctx.strokeRect(screenX, screenY, obj.width, obj.height);
+        
+        // Platform details
+        ctx.fillStyle = '#A0522D';
+        ctx.fillRect(screenX + 4, screenY + 2, obj.width - 8, 4);
+        ctx.fillRect(screenX + 4, screenY + 10, obj.width - 8, 4);
+        break;
+        
+      case 'starman':
+        // Starman animation
+        const starTime = Date.now() / 100;
+        const starScale = 0.9 + 0.1 * Math.sin(starTime);
+        
+        // Star body
+        ctx.fillStyle = '#F1C40F';
+        ctx.save();
+        ctx.translate(screenX + 8, screenY + 8);
+        ctx.scale(starScale, starScale);
+        ctx.beginPath();
+        for (let i = 0; i < 5; i++) {
+          const angle = (i * 144 - 90) * Math.PI / 180;
+          const x = Math.cos(angle) * 8;
+          const y = Math.sin(angle) * 8;
+          if (i === 0) ctx.moveTo(x, y);
+          else ctx.lineTo(x, y);
+        }
+        ctx.closePath();
+        ctx.fill();
+        ctx.restore();
+        
+        // Eyes
+        ctx.fillStyle = '#000000';
+        ctx.fillRect(screenX + 5, screenY + 6, 2, 2);
+        ctx.fillRect(screenX + 9, screenY + 6, 2, 2);
         break;
         
       case 'fireflower':
@@ -658,6 +778,11 @@ export const GameCanvas = () => {
       const mario = { ...newState.mario };
       const objects = [...newState.objects];
 
+      // Decrease invincibility timer
+      if (mario.invincible > 0) {
+        mario.invincible--;
+      }
+
       // Handle input
       if (newState.keys.has('ArrowLeft') || newState.keys.has('KeyA')) {
         mario.vx = -MARIO_SPEED;
@@ -673,7 +798,7 @@ export const GameCanvas = () => {
         playSound('jump');
       }
 
-      // Fireball shooting (X key)
+      // Fireball shooting (X key) - only if Fire Mario
       if (newState.keys.has('KeyX') && mario.fire) {
         // Check if we can shoot (prevent rapid fire)
         const lastFireball = objects.find(obj => obj.type === 'fireball');
@@ -690,7 +815,7 @@ export const GameCanvas = () => {
             bounce: 3
           };
           objects.push(fireball);
-          playSound('powerup');
+          playSound('fireball');
         }
       }
 
@@ -709,57 +834,23 @@ export const GameCanvas = () => {
       // Check collision with solid objects (ground, pipes, blocks)
       let onGround = false;
       objects.forEach(obj => {
-        if (obj.active && obj.solid && checkCollision(mario, obj)) {
-          console.log(`Solid collision with ${obj.type} at (${obj.x}, ${obj.y}), Mario at (${mario.x}, ${mario.y}), Mario vy: ${mario.vy}, prevY: ${prevY}`);
+        if (obj.active && obj.solid && !obj.broken && checkCollision(mario, obj)) {
           
           // Special handling for blocks and bricks when hit from below
           if ((obj.type === 'block' || obj.type === 'brick') && mario.vy < 0 && prevY >= obj.y + obj.height - 5 && mario.y <= obj.y + obj.height) {
-            console.log(`Mario hit ${obj.type} from below! Triggering block interaction.`);
             
             // Mario hits block from below - trigger the block interaction
             mario.vy = 3; // Bounce downward
             mario.y = obj.y + obj.height; // Position Mario just below the block
             
             if (obj.type === 'block') {
-              console.log('Question block hit! Spawning item...');
               // Question block - spawn item and change appearance
               obj.type = 'brick'; // Change to empty brick
               
-              // Determine what to spawn based on block position
-              if (obj.x === 352) {
-                // Second question block always spawns mushroom
-                console.log('Spawning mushroom from specific block...');
-                const mushroom: GameObject = {
-                  x: obj.x,
-                  y: obj.y - 20,
-                  width: 16,
-                  height: 16,
-                  type: 'mushroom',
-                  active: true,
-                  vx: 1.5,
-                  vy: -2
-                };
-                objects.push(mushroom);
-                console.log('Mushroom spawned at:', mushroom.x, mushroom.y);
-                playSound('powerup');
-              } else if (obj.x === 768) {
-                // Third question block spawns fire flower if Mario is big
-                if (mario.big && !mario.fire) {
-                  console.log('Spawning fire flower...');
-                  const fireflower: GameObject = {
-                    x: obj.x,
-                    y: obj.y - 20,
-                    width: 16,
-                    height: 16,
-                    type: 'fireflower',
-                    active: true,
-                    vy: -2
-                  };
-                  objects.push(fireflower);
-                  playSound('powerup');
-                } else {
-                  // Spawn mushroom if Mario is small
-                  console.log('Spawning mushroom instead...');
+              // Determine what to spawn based on block position and level
+              if (newState.currentLevel === 1) {
+                if (obj.x === 352) {
+                  // Second question block always spawns mushroom
                   const mushroom: GameObject = {
                     x: obj.x,
                     y: obj.y - 20,
@@ -772,27 +863,72 @@ export const GameCanvas = () => {
                   };
                   objects.push(mushroom);
                   playSound('powerup');
-                }
-              } else {
-                // Other blocks spawn coins or mushrooms randomly
-                if (Math.random() < 0.3) {
-                  console.log('Spawning mushroom...');
-                  const mushroom: GameObject = {
-                    x: obj.x,
-                    y: obj.y - 20,
-                    width: 16,
-                    height: 16,
-                    type: Math.random() < 0.15 ? 'oneup' : 'mushroom',
-                    active: true,
-                    vx: 1.5,
-                    vy: -2
-                  };
-                  objects.push(mushroom);
-                  console.log('Mushroom spawned at:', mushroom.x, mushroom.y);
-                  playSound('powerup');
+                } else if (obj.x === 768) {
+                  // Third question block spawns fire flower if Mario is big
+                  if (mario.big && !mario.fire) {
+                    const fireflower: GameObject = {
+                      x: obj.x,
+                      y: obj.y - 20,
+                      width: 16,
+                      height: 16,
+                      type: 'fireflower',
+                      active: true,
+                      vy: -2
+                    };
+                    objects.push(fireflower);
+                    playSound('powerup');
+                  } else {
+                    // Spawn mushroom if Mario is small
+                    const mushroom: GameObject = {
+                      x: obj.x,
+                      y: obj.y - 20,
+                      width: 16,
+                      height: 16,
+                      type: 'mushroom',
+                      active: true,
+                      vx: 1.5,
+                      vy: -2
+                    };
+                    objects.push(mushroom);
+                    playSound('powerup');
+                  }
                 } else {
-                  console.log('Spawning coin...');
-                  // Spawn coin with upward velocity for animation
+                  // Other blocks spawn coins or mushrooms randomly
+                  if (Math.random() < 0.3) {
+                    const mushroom: GameObject = {
+                      x: obj.x,
+                      y: obj.y - 20,
+                      width: 16,
+                      height: 16,
+                      type: Math.random() < 0.15 ? 'oneup' : 'mushroom',
+                      active: true,
+                      vx: 1.5,
+                      vy: -2
+                    };
+                    objects.push(mushroom);
+                    playSound('powerup');
+                  } else {
+                    // Spawn coin with upward velocity for animation
+                    const coin: GameObject = {
+                      x: obj.x + 8,
+                      y: obj.y - 20,
+                      width: 16,
+                      height: 16,
+                      type: 'coin',
+                      active: true,
+                      vy: -8,
+                      vx: 0
+                    };
+                    objects.push(coin);
+                    newState.coins++;
+                    newState.score += 200;
+                    playSound('coin');
+                  }
+                }
+              } else if (newState.currentLevel === 2) {
+                // Underground level spawns
+                if (obj.x === 128 || obj.x === 160) {
+                  // Starting blocks spawn coins
                   const coin: GameObject = {
                     x: obj.x + 8,
                     y: obj.y - 20,
@@ -800,22 +936,80 @@ export const GameCanvas = () => {
                     height: 16,
                     type: 'coin',
                     active: true,
-                    vy: -8, // Strong upward velocity
+                    vy: -8,
                     vx: 0
                   };
                   objects.push(coin);
-                  console.log('Coin spawned at:', coin.x, coin.y);
                   newState.coins++;
                   newState.score += 200;
                   playSound('coin');
+                } else {
+                  // Other blocks spawn power-ups
+                  if (!mario.big) {
+                    const mushroom: GameObject = {
+                      x: obj.x,
+                      y: obj.y - 20,
+                      width: 16,
+                      height: 16,
+                      type: 'mushroom',
+                      active: true,
+                      vx: 1.5,
+                      vy: -2
+                    };
+                    objects.push(mushroom);
+                    playSound('powerup');
+                  } else if (!mario.fire) {
+                    const fireflower: GameObject = {
+                      x: obj.x,
+                      y: obj.y - 20,
+                      width: 16,
+                      height: 16,
+                      type: 'fireflower',
+                      active: true,
+                      vy: -2
+                    };
+                    objects.push(fireflower);
+                    playSound('powerup');
+                  } else {
+                    // Spawn 1-up if already fire mario
+                    const oneup: GameObject = {
+                      x: obj.x,
+                      y: obj.y - 20,
+                      width: 16,
+                      height: 16,
+                      type: 'oneup',
+                      active: true,
+                      vx: 1.5,
+                      vy: -2
+                    };
+                    objects.push(oneup);
+                    playSound('powerup');
+                  }
                 }
               }
             } else if (obj.type === 'brick' && mario.big) {
-              console.log('Big Mario breaking brick!');
               // Big Mario can break bricks
               obj.active = false;
+              obj.broken = true;
               newState.score += 50;
-              playSound('powerup');
+              playSound('break');
+              
+              // Special brick spawns
+              if (newState.currentLevel === 2 && obj.x === 256) {
+                // Starman brick in underground level
+                const starman: GameObject = {
+                  x: obj.x,
+                  y: obj.y - 20,
+                  width: 16,
+                  height: 16,
+                  type: 'starman',
+                  active: true,
+                  vx: 2,
+                  vy: -8
+                };
+                objects.push(starman);
+                playSound('powerup');
+              }
             }
             return; // Don't do normal collision handling
           }
@@ -860,31 +1054,191 @@ export const GameCanvas = () => {
         mario.grounded = false;
       }
 
-      // Update Goombas
-      objects.forEach(obj => {
-        if (obj.type === 'goomba' && obj.active) {
-          obj.x += obj.vx || 0;
-          
-          // Reverse direction at edges or when hitting solid objects
-          const nextX = obj.x + (obj.vx || 0) * 2;
-          const hitsSolid = objects.some(other => 
-            other.active && other.solid &&
-            nextX < other.x + other.width && 
-            nextX + obj.width > other.x &&
-            obj.y < other.y + other.height && 
-            obj.y + obj.height > other.y
-          );
-          
-          // Also reverse at level boundaries
-          if (hitsSolid || obj.x <= 32 || obj.x >= 1450) {
-            obj.vx = -(obj.vx || 0);
-            obj.direction = -(obj.direction || 1);
-          }
-          
-          // Keep goombas on ground
-          if (obj.y + obj.height < 368) {
-            obj.y = 368 - obj.height;
-          }
+      // Update enemies and objects
+      objects.forEach((obj, index) => {
+        if (!obj.active) return;
+
+        switch (obj.type) {
+          case 'goomba':
+            obj.x += obj.vx || 0;
+            
+            // Reverse direction at edges or when hitting solid objects
+            const nextX = obj.x + (obj.vx || 0) * 2;
+            const hitsSolid = objects.some(other => 
+              other.active && other.solid && !other.broken &&
+              nextX < other.x + other.width && 
+              nextX + obj.width > other.x &&
+              obj.y < other.y + other.height && 
+              obj.y + obj.height > other.y
+            );
+            
+            if (hitsSolid || obj.x <= 32 || obj.x >= 1900) {
+              obj.vx = -(obj.vx || 0);
+              obj.direction = -(obj.direction || 1);
+            }
+            
+            // Keep goombas on ground
+            if (obj.y + obj.height < 368) {
+              obj.y = 368 - obj.height;
+            }
+            break;
+
+          case 'koopa':
+            if (obj.shell && obj.vx !== 0) {
+              // Moving shell
+              obj.x += obj.vx;
+              
+              // Check for collisions with other enemies
+              objects.forEach(other => {
+                if (other !== obj && other.active && (other.type === 'goomba' || other.type === 'koopa') && checkCollision(obj, other)) {
+                  other.active = false;
+                  newState.score += 100;
+                  playSound('stomp');
+                }
+              });
+              
+              // Reverse direction at walls
+              const shellNextX = obj.x + obj.vx * 2;
+              const shellHitsSolid = objects.some(other => 
+                other.active && other.solid && !other.broken &&
+                shellNextX < other.x + other.width && 
+                shellNextX + obj.width > other.x &&
+                obj.y < other.y + other.height && 
+                obj.y + obj.height > other.y
+              );
+              
+              if (shellHitsSolid || obj.x <= 32 || obj.x >= 1900) {
+                obj.vx = -obj.vx;
+              }
+            } else if (!obj.shell) {
+              // Normal koopa movement
+              obj.x += obj.vx || 0;
+              
+              const koopaNextX = obj.x + (obj.vx || 0) * 2;
+              const koopaHitsSolid = objects.some(other => 
+                other.active && other.solid && !other.broken &&
+                koopaNextX < other.x + other.width && 
+                koopaNextX + obj.width > other.x &&
+                obj.y < other.y + other.height && 
+                obj.y + obj.height > other.y
+              );
+              
+              if (koopaHitsSolid || obj.x <= 32 || obj.x >= 1900) {
+                obj.vx = -(obj.vx || 0);
+                obj.direction = -(obj.direction || 1);
+              }
+            }
+            
+            // Keep koopas on ground
+            if (obj.y + obj.height < 368) {
+              obj.y = 368 - obj.height;
+            }
+            break;
+
+          case 'piranha':
+            // Piranha plant movement
+            obj.y += obj.vy || 0;
+            if (obj.y <= (obj.minY || 200)) {
+              obj.vy = 1;
+            } else if (obj.y >= (obj.maxY || 300)) {
+              obj.vy = -1;
+            }
+            break;
+
+          case 'elevator':
+            // Moving platform
+            if (obj.moving) {
+              obj.y += obj.vy || 0;
+              if (obj.y <= (obj.minY || 200)) {
+                obj.vy = 1;
+              } else if (obj.y >= (obj.maxY || 320)) {
+                obj.vy = -1;
+              }
+              
+              // Move Mario with platform if he's standing on it
+              if (mario.grounded && checkCollision(mario, obj) && mario.y <= obj.y) {
+                mario.y += obj.vy || 0;
+              }
+            }
+            break;
+
+          case 'mushroom':
+          case 'oneup':
+          case 'starman':
+            obj.x += obj.vx || 0;
+            obj.vy = (obj.vy || 0) + GRAVITY;
+            obj.y += obj.vy || 0;
+            
+            // Ground collision for power-ups
+            if (obj.y + obj.height >= 368) {
+              obj.y = 368 - obj.height;
+              obj.vy = 0;
+            }
+            
+            // Bounce off solid objects
+            objects.forEach(other => {
+              if (other.active && other.solid && !other.broken && other !== obj && checkCollision(obj, other)) {
+                obj.vx = -(obj.vx || 0);
+              }
+            });
+            break;
+
+          case 'fireflower':
+            obj.vy = (obj.vy || 0) + GRAVITY;
+            obj.y += obj.vy || 0;
+            
+            // Ground collision for fire flowers
+            if (obj.y + obj.height >= 368) {
+              obj.y = 368 - obj.height;
+              obj.vy = 0;
+            }
+            break;
+
+          case 'fireball':
+            obj.x += obj.vx || 0;
+            obj.vy = (obj.vy || 0) + GRAVITY * 0.3;
+            obj.y += obj.vy || 0;
+            
+            // Bounce off ground
+            if (obj.y + obj.height >= 368) {
+              obj.y = 368 - obj.height;
+              obj.vy = -Math.abs(obj.vy || 0) * 0.7;
+              obj.bounce = (obj.bounce || 0) - 1;
+              
+              if (obj.bounce <= 0) {
+                obj.active = false;
+              }
+            }
+            
+            // Remove if off screen
+            if (obj.x < -50 || obj.x > 2000) {
+              obj.active = false;
+            }
+            
+            // Check fireball collision with enemies
+            objects.forEach(enemy => {
+              if ((enemy.type === 'goomba' || enemy.type === 'koopa' || enemy.type === 'piranha') && enemy.active && checkCollision(obj, enemy)) {
+                enemy.active = false;
+                obj.active = false;
+                newState.score += 100;
+                playSound('stomp');
+              }
+            });
+            break;
+
+          case 'coin':
+            // Update spawned coins (from blocks) with physics
+            if (obj.hasOwnProperty('vy') && obj.active) {
+              obj.vy = (obj.vy || 0) + GRAVITY;
+              obj.y += obj.vy || 0;
+              obj.x += obj.vx || 0;
+              
+              // Remove coin after it falls for a while or goes off screen
+              if (obj.y > 450 || (obj.vy && obj.vy > 5)) {
+                obj.active = false;
+              }
+            }
+            break;
         }
       });
 
@@ -895,36 +1249,135 @@ export const GameCanvas = () => {
         const collision = checkCollision(mario, obj);
 
         if (collision) {
-          console.log(`Mario collided with ${obj.type} at position (${obj.x}, ${obj.y})`);
-          
           switch (obj.type) {
             case 'goomba':
-              if (mario.vy > 0 && mario.y < obj.y - 5) {
+              if (mario.invincible > 0) {
+                // Invincible Mario defeats Goomba
+                obj.active = false;
+                newState.score += 100;
+                playSound('stomp');
+              } else if (mario.vy > 0 && mario.y < obj.y - 5) {
                 // Mario stomps Goomba
                 obj.active = false;
                 mario.vy = JUMP_FORCE / 2;
                 newState.score += 100;
                 playSound('stomp');
-              } else if (!mario.big) {
-                // Mario hits Goomba while small
-                newState.lives--;
-                playSound('death');
-                if (newState.lives <= 0) {
-                  newState.gameOver = true;
-                  newState.gameRunning = false;
-                } else {
-                  // Reset Mario position
-                  mario.x = 50;
-                  mario.y = 300;
-                  mario.vx = 0;
-                  mario.vy = 0;
-                }
               } else {
-                // Mario hits Goomba while big - shrink
-                mario.big = false;
-                mario.height = 20;
-                mario.y += 8; // Adjust position after shrinking
-                playSound('death');
+                // Mario gets hit by Goomba
+                if (mario.fire) {
+                  // Fire Mario becomes Big Mario
+                  mario.fire = false;
+                  mario.invincible = 120; // 2 seconds of invincibility
+                  playSound('shrink');
+                } else if (mario.big) {
+                  // Big Mario becomes Small Mario
+                  mario.big = false;
+                  mario.height = 20;
+                  mario.y += 8; // Adjust position after shrinking
+                  mario.invincible = 120; // 2 seconds of invincibility
+                  playSound('shrink');
+                } else {
+                  // Small Mario dies
+                  newState.lives--;
+                  playSound('death');
+                  if (newState.lives <= 0) {
+                    newState.gameOver = true;
+                    newState.gameRunning = false;
+                  } else {
+                    mario.x = 50;
+                    mario.y = 300;
+                    mario.vx = 0;
+                    mario.vy = 0;
+                    mario.invincible = 180; // 3 seconds of invincibility after respawn
+                  }
+                }
+              }
+              break;
+
+            case 'koopa':
+              if (mario.invincible > 0) {
+                // Invincible Mario defeats Koopa
+                obj.active = false;
+                newState.score += 100;
+                playSound('stomp');
+              } else if (mario.vy > 0 && mario.y < obj.y - 5) {
+                // Mario stomps Koopa
+                if (!obj.shell) {
+                  obj.shell = true;
+                  obj.vx = 0;
+                  obj.width = 16;
+                  obj.height = 16;
+                  mario.vy = JUMP_FORCE / 2;
+                  newState.score += 100;
+                  playSound('stomp');
+                } else {
+                  // Kick shell
+                  obj.vx = mario.x < obj.x ? 8 : -8;
+                  mario.vy = JUMP_FORCE / 2;
+                  newState.score += 100;
+                  playSound('stomp');
+                }
+              } else if (obj.shell && obj.vx === 0) {
+                // Kick stationary shell
+                obj.vx = mario.x < obj.x ? 8 : -8;
+                newState.score += 100;
+                playSound('stomp');
+              } else if (!obj.shell || obj.vx === 0) {
+                // Mario gets hit by moving Koopa (same as Goomba)
+                if (mario.fire) {
+                  mario.fire = false;
+                  mario.invincible = 120;
+                  playSound('shrink');
+                } else if (mario.big) {
+                  mario.big = false;
+                  mario.height = 20;
+                  mario.y += 8;
+                  mario.invincible = 120;
+                  playSound('shrink');
+                } else {
+                  newState.lives--;
+                  playSound('death');
+                  if (newState.lives <= 0) {
+                    newState.gameOver = true;
+                    newState.gameRunning = false;
+                  } else {
+                    mario.x = 50;
+                    mario.y = 300;
+                    mario.vx = 0;
+                    mario.vy = 0;
+                    mario.invincible = 180;
+                  }
+                }
+              }
+              break;
+
+            case 'piranha':
+              if (mario.invincible === 0) {
+                // Mario gets hit by Piranha Plant
+                if (mario.fire) {
+                  mario.fire = false;
+                  mario.invincible = 120;
+                  playSound('shrink');
+                } else if (mario.big) {
+                  mario.big = false;
+                  mario.height = 20;
+                  mario.y += 8;
+                  mario.invincible = 120;
+                  playSound('shrink');
+                } else {
+                  newState.lives--;
+                  playSound('death');
+                  if (newState.lives <= 0) {
+                    newState.gameOver = true;
+                    newState.gameRunning = false;
+                  } else {
+                    mario.x = 50;
+                    mario.y = 300;
+                    mario.vx = 0;
+                    mario.vy = 0;
+                    mario.invincible = 180;
+                  }
+                }
               }
               break;
 
@@ -937,12 +1390,6 @@ export const GameCanvas = () => {
                 newState.lives++;
                 newState.coins = 0;
               }
-              break;
-
-            case 'block':
-            case 'brick':
-              // Block collision is now handled in the solid collision section above
-              // This prevents duplicate handling and ensures proper physics
               break;
 
             case 'mushroom':
@@ -962,6 +1409,13 @@ export const GameCanvas = () => {
               newState.score += 1000;
               playSound('powerup');
               break;
+
+            case 'starman':
+              obj.active = false;
+              mario.invincible = 600; // 10 seconds of invincibility
+              newState.score += 1000;
+              playSound('powerup');
+              break;
               
             case 'fireflower':
               obj.active = false;
@@ -976,17 +1430,14 @@ export const GameCanvas = () => {
               newState.score += 1000;
               playSound('powerup');
               break;
+
             case 'flag':
-              // Transition to world 1-2 or complete game
+              // Transition to next level or complete game
               if (newState.currentLevel === 1) {
                 // Go to world 1-2
-                initializeWorld2();
-                newState.currentLevel = 2;
-                mario.x = 50;
-                mario.y = 300;
-                mario.vx = 0;
-                mario.vy = 0;
-                newState.camera.x = 0;
+                setTimeout(() => {
+                  initializeWorld2();
+                }, 1000);
                 newState.score += 5000;
                 playSound('powerup');
               } else {
@@ -1000,96 +1451,9 @@ export const GameCanvas = () => {
         }
       });
 
-      // Update mushrooms, power-ups, and spawned coins
-      objects.forEach(obj => {
-        if ((obj.type === 'mushroom' || obj.type === 'oneup') && obj.active) {
-          obj.x += obj.vx || 0;
-          obj.vy = (obj.vy || 0) + GRAVITY;
-          obj.y += obj.vy || 0;
-          
-          // Ground collision for mushrooms
-          if (obj.y + obj.height >= 368) {
-            obj.y = 368 - obj.height;
-            obj.vy = 0;
-          }
-          
-          // Bounce off solid objects
-          objects.forEach(other => {
-            if (other.active && other.solid && other !== obj && checkCollision(obj, other)) {
-              obj.vx = -(obj.vx || 0);
-            }
-          });
-        }
-
-        // Update spawned coins (from blocks) with physics
-        if (obj.type === 'coin' && obj.hasOwnProperty('vy') && obj.active) {
-          obj.vy = (obj.vy || 0) + GRAVITY;
-          obj.y += obj.vy || 0;
-          obj.x += obj.vx || 0;
-          
-          // Remove coin after it falls for a while or goes off screen
-          if (obj.y > 450 || (obj.vy && obj.vy > 5)) {
-            obj.active = false;
-          }
-        }
-
-        // Update fireballs
-        if (obj.type === 'fireball' && obj.active) {
-          obj.x += obj.vx || 0;
-          obj.vy = (obj.vy || 0) + GRAVITY * 0.3; // Lighter gravity for fireballs
-          obj.y += obj.vy || 0;
-          
-          // Bounce off ground
-          if (obj.y + obj.height >= 368) {
-            obj.y = 368 - obj.height;
-            obj.vy = -Math.abs(obj.vy || 0) * 0.7; // Bounce with decay
-            obj.bounce = (obj.bounce || 0) - 1;
-            
-            // Remove fireball after bounces
-            if (obj.bounce <= 0) {
-              obj.active = false;
-            }
-          }
-          
-          // Remove if off screen
-          if (obj.x < -50 || obj.x > 2000) {
-            obj.active = false;
-          }
-          
-          // Check fireball collision with enemies
-          objects.forEach(enemy => {
-            if (enemy.type === 'goomba' && enemy.active && checkCollision(obj, enemy)) {
-              enemy.active = false;
-              obj.active = false;
-              newState.score += 100;
-              playSound('stomp');
-            }
-          });
-        }
-
-        // Update fire flowers with physics
-        if (obj.type === 'fireflower' && obj.active) {
-          obj.vy = (obj.vy || 0) + GRAVITY;
-          obj.y += obj.vy || 0;
-          
-          // Ground collision for fire flowers
-          if (obj.y + obj.height >= 368) {
-            obj.y = 368 - obj.height;
-            obj.vy = 0;
-          }
-        }
-      });
-
       // Update camera to follow Mario smoothly
-      const targetCameraX = Math.max(0, Math.min(mario.x - CANVAS_WIDTH / 2, 1600 - CANVAS_WIDTH));
+      const targetCameraX = Math.max(0, Math.min(mario.x - CANVAS_WIDTH / 2, 2000 - CANVAS_WIDTH));
       newState.camera.x = newState.camera.x + (targetCameraX - newState.camera.x) * 0.1;
-
-      // Check win condition (reach flag)
-      if (mario.x > 1500) {
-        newState.gameWon = true;
-        newState.gameRunning = false;
-        newState.score += 5000;
-      }
 
       // Check death condition (fall off screen)
       if (mario.y > 500) {
@@ -1104,7 +1468,34 @@ export const GameCanvas = () => {
           mario.vx = 0;
           mario.vy = 0;
           mario.big = false;
+          mario.fire = false;
           mario.height = 20;
+          mario.invincible = 180;
+        }
+      }
+
+      // Update timer
+      if (newState.time > 0) {
+        newState.time -= 1/60; // Decrease by 1 every second (assuming 60 FPS)
+        if (newState.time <= 0) {
+          newState.time = 0;
+          // Time up - Mario dies
+          newState.lives--;
+          playSound('death');
+          if (newState.lives <= 0) {
+            newState.gameOver = true;
+            newState.gameRunning = false;
+          } else {
+            mario.x = 50;
+            mario.y = 300;
+            mario.vx = 0;
+            mario.vy = 0;
+            mario.big = false;
+            mario.fire = false;
+            mario.height = 20;
+            mario.invincible = 180;
+            newState.time = 400;
+          }
         }
       }
 
@@ -1113,7 +1504,7 @@ export const GameCanvas = () => {
 
       return newState;
     });
-  }, [gameState.gameRunning]);
+  }, [gameState.gameRunning, initializeWorld2]);
 
   // Render
   const render = useCallback(() => {
@@ -1123,13 +1514,13 @@ export const GameCanvas = () => {
     const ctx = canvas.getContext('2d');
     if (!ctx) return;
 
-    // Clear canvas
-    ctx.fillStyle = '#5DADE2';
+    // Clear canvas with level-appropriate background
+    ctx.fillStyle = gameState.currentLevel === 2 ? '#000080' : '#5DADE2'; // Dark blue for underground
     ctx.fillRect(0, 0, CANVAS_WIDTH, CANVAS_HEIGHT);
 
     // Draw objects
     gameState.objects.forEach(obj => {
-      if (obj.active) {
+      if (obj.active && !obj.broken) {
         drawObject(ctx, obj, gameState.camera);
       }
     });
@@ -1139,18 +1530,25 @@ export const GameCanvas = () => {
 
     // Draw UI with better styling
     ctx.fillStyle = '#000000';
-    ctx.fillRect(5, 5, 200, 75);
+    ctx.fillRect(5, 5, 250, 90);
     ctx.fillStyle = '#FFFFFF';
     ctx.font = 'bold 14px monospace';
     ctx.textAlign = 'left';
     ctx.fillText(`MARIO`, 10, 25);
     ctx.fillText(`${gameState.score.toString().padStart(6, '0')}`, 10, 40);
     ctx.fillText(`WORLD`, 80, 25);
-    ctx.fillText(`1-1`, 80, 40);
+    ctx.fillText(`1-${gameState.currentLevel}`, 80, 40);
     ctx.fillText(`TIME`, 130, 25);
-    ctx.fillText(`999`, 130, 40);
+    ctx.fillText(`${Math.ceil(gameState.time).toString().padStart(3, '0')}`, 130, 40);
     ctx.fillText(`Lives: ${gameState.lives}`, 10, 60);
     ctx.fillText(`Coins: ${gameState.coins}`, 10, 75);
+    
+    // Show Mario status
+    let status = 'Small Mario';
+    if (gameState.mario.fire) status = 'Fire Mario';
+    else if (gameState.mario.big) status = 'Super Mario';
+    if (gameState.mario.invincible > 0) status += ' (Invincible)';
+    ctx.fillText(status, 10, 90);
 
     // Game over/win messages
     if (gameState.gameWon) {
@@ -1238,7 +1636,9 @@ export const GameCanvas = () => {
       gameOver: false,
       lives: 3,
       score: 0,
-      coins: 0
+      coins: 0,
+      currentLevel: 1,
+      time: 400
     }));
   };
 
@@ -1269,11 +1669,11 @@ export const GameCanvas = () => {
         />
         
         <div className="mt-4 text-center pixel-font text-mario-white">
-          <p>🎮 Arrow Keys or WASD to move • Space/W/↑ to jump</p>
-          <p>🍄 Stomp Goombas • Collect Mushrooms and Coins • Reach the Flag!</p>
-          <p>🎵 Listen for jump and coin sound effects!</p>
+          <p>🎮 Arrow Keys or WASD to move • Space/W/↑ to jump • X to shoot fireballs (Fire Mario only)</p>
+          <p>🍄 Stomp Goombas • Collect Mushrooms and Coins • Break bricks as Big Mario • Reach the Flag!</p>
+          <p>🎵 Enhanced with brick breaking, Mario shrinking, fireball shooting, and World 1-2!</p>
           {!gameState.gameRunning && !gameState.gameWon && !gameState.gameOver && (
-            <p className="mt-2 text-mario-yellow animate-pulse">🚀 Press Start Game to begin your adventure!</p>
+            <p className="mt-2 text-mario-yellow animate-pulse">🚀 Press Start Game to begin your enhanced adventure!</p>
           )}
         </div>
       </Card>
