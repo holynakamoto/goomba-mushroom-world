@@ -7,7 +7,7 @@ interface GameObject {
   y: number;
   width: number;
   height: number;
-  type: 'mario' | 'goomba' | 'mushroom' | 'coin' | 'block' | 'pipe' | 'ground' | 'oneup' | 'brick' | 'flag';
+  type: 'mario' | 'goomba' | 'mushroom' | 'coin' | 'block' | 'pipe' | 'ground' | 'oneup' | 'brick' | 'flag' | 'fireflower' | 'fireball';
   active: boolean;
   vx?: number;
   vy?: number;
@@ -15,7 +15,9 @@ interface GameObject {
   collected?: boolean;
   direction?: number;
   big?: boolean;
+  fire?: boolean;
   solid?: boolean;
+  bounce?: number;
 }
 
 interface GameState {
@@ -29,6 +31,7 @@ interface GameState {
   gameWon: boolean;
   gameOver: boolean;
   keys: Set<string>;
+  currentLevel: number;
 }
 
 const CANVAS_WIDTH = 800;
@@ -55,7 +58,8 @@ export const GameCanvas = () => {
       vx: 0,
       vy: 0,
       grounded: false,
-      big: false
+      big: false,
+      fire: false
     },
     objects: [],
     camera: { x: 0, y: 0 },
@@ -65,7 +69,8 @@ export const GameCanvas = () => {
     gameRunning: false,
     gameWon: false,
     gameOver: false,
-    keys: new Set()
+    keys: new Set(),
+    currentLevel: 1
   });
 
   // Background music
@@ -228,6 +233,93 @@ export const GameCanvas = () => {
     }));
   }, []);
 
+  // Initialize World 1-2 (Underground level)
+  const initializeWorld2 = useCallback(() => {
+    const levelObjects: GameObject[] = [
+      // Ground blocks (underground style)
+      ...Array.from({ length: 60 }, (_, i) => ({
+        x: i * 32,
+        y: 368,
+        width: 32,
+        height: 32,
+        type: 'ground' as const,
+        active: true,
+        solid: true
+      })),
+      
+      // Ceiling blocks (underground style)
+      ...Array.from({ length: 60 }, (_, i) => ({
+        x: i * 32,
+        y: 0,
+        width: 32,
+        height: 32,
+        type: 'brick' as const,
+        active: true,
+        solid: true
+      })),
+      
+      // Side walls
+      ...Array.from({ length: 11 }, (_, i) => ({
+        x: 0,
+        y: i * 32 + 32,
+        width: 32,
+        height: 32,
+        type: 'brick' as const,
+        active: true,
+        solid: true
+      })),
+      
+      // Underground question blocks
+      { x: 192, y: 272, width: 32, height: 32, type: 'block', active: true, solid: true },
+      { x: 288, y: 272, width: 32, height: 32, type: 'block', active: true, solid: true },
+      { x: 544, y: 272, width: 32, height: 32, type: 'block', active: true, solid: true },
+      { x: 800, y: 272, width: 32, height: 32, type: 'block', active: true, solid: true },
+      
+      // Brick maze
+      { x: 384, y: 304, width: 32, height: 32, type: 'brick', active: true, solid: true },
+      { x: 416, y: 304, width: 32, height: 32, type: 'brick', active: true, solid: true },
+      { x: 448, y: 272, width: 32, height: 32, type: 'brick', active: true, solid: true },
+      { x: 448, y: 304, width: 32, height: 32, type: 'brick', active: true, solid: true },
+      { x: 480, y: 240, width: 32, height: 32, type: 'brick', active: true, solid: true },
+      { x: 480, y: 272, width: 32, height: 32, type: 'brick', active: true, solid: true },
+      
+      // Underground Goombas
+      { x: 250, y: 336, width: 20, height: 20, type: 'goomba', active: true, vx: -GOOMBA_SPEED, direction: -1 },
+      { x: 350, y: 336, width: 20, height: 20, type: 'goomba', active: true, vx: GOOMBA_SPEED, direction: 1 },
+      { x: 600, y: 336, width: 20, height: 20, type: 'goomba', active: true, vx: -GOOMBA_SPEED, direction: -1 },
+      { x: 850, y: 336, width: 20, height: 20, type: 'goomba', active: true, vx: GOOMBA_SPEED, direction: 1 },
+      { x: 1100, y: 336, width: 20, height: 20, type: 'goomba', active: true, vx: -GOOMBA_SPEED, direction: -1 },
+      
+      // Underground coins
+      { x: 160, y: 200, width: 16, height: 16, type: 'coin', active: true },
+      { x: 320, y: 200, width: 16, height: 16, type: 'coin', active: true },
+      { x: 576, y: 200, width: 16, height: 16, type: 'coin', active: true },
+      { x: 832, y: 200, width: 16, height: 16, type: 'coin', active: true },
+      { x: 1000, y: 150, width: 16, height: 16, type: 'coin', active: true },
+      
+      // Exit pipe (leads to end)
+      { x: 1200, y: 304, width: 64, height: 64, type: 'pipe', active: true, solid: true },
+      
+      // Flag at the end
+      { x: 1300, y: 200, width: 32, height: 168, type: 'flag', active: true, solid: true },
+    ];
+
+    setGameState(prev => ({
+      ...prev,
+      objects: levelObjects,
+      mario: {
+        ...prev.mario,
+        x: 50,
+        y: 300,
+        vx: 0,
+        vy: 0,
+        grounded: false
+      },
+      camera: { x: 0, y: 0 },
+      gameRunning: true
+    }));
+  }, []);
+
   // Collision detection helper
   const checkCollision = (obj1: GameObject, obj2: GameObject) => {
     return obj1.x < obj2.x + obj2.width &&
@@ -247,7 +339,7 @@ export const GameCanvas = () => {
     ctx.fillRect(screenX + 2, screenY + 8 * size, 16, 12 * size);
     
     // Mario shirt
-    ctx.fillStyle = '#F24236';
+    ctx.fillStyle = mario.fire ? '#FFFFFF' : '#F24236';
     ctx.fillRect(screenX + 4, screenY + 6 * size, 12, 8 * size);
     
     // Mario head
@@ -506,6 +598,54 @@ export const GameCanvas = () => {
         ctx.fillRect(screenX, screenY + 18, 6, 2);
         ctx.fillRect(screenX + 14, screenY + 18, 6, 2);
         break;
+        
+      case 'fireflower':
+        // Fire flower stem
+        ctx.fillStyle = '#2ECC71';
+        ctx.fillRect(screenX + 6, screenY + 8, 4, 8);
+        
+        // Fire flower petals
+        ctx.fillStyle = '#E74C3C';
+        ctx.beginPath();
+        ctx.arc(screenX + 8, screenY + 6, 6, 0, Math.PI * 2);
+        ctx.fill();
+        
+        // Fire flower center
+        ctx.fillStyle = '#F1C40F';
+        ctx.beginPath();
+        ctx.arc(screenX + 8, screenY + 6, 3, 0, Math.PI * 2);
+        ctx.fill();
+        
+        // Fire flower face
+        ctx.fillStyle = '#000000';
+        ctx.fillRect(screenX + 6, screenY + 4, 1, 1);
+        ctx.fillRect(screenX + 9, screenY + 4, 1, 1);
+        ctx.fillRect(screenX + 7, screenY + 7, 2, 1);
+        break;
+        
+      case 'fireball':
+        // Fireball animation
+        const fireTime = Date.now() / 100;
+        const fireScale = 0.8 + 0.3 * Math.sin(fireTime);
+        
+        // Outer fire
+        ctx.fillStyle = '#E74C3C';
+        ctx.beginPath();
+        ctx.arc(screenX + 4, screenY + 4, 5 * fireScale, 0, Math.PI * 2);
+        ctx.fill();
+        
+        // Inner fire
+        ctx.fillStyle = '#F39C12';
+        ctx.beginPath();
+        ctx.arc(screenX + 4, screenY + 4, 3 * fireScale, 0, Math.PI * 2);
+        ctx.fill();
+        
+        // Core
+        ctx.fillStyle = '#F1C40F';
+        ctx.beginPath();
+        ctx.arc(screenX + 4, screenY + 4, 1.5 * fireScale, 0, Math.PI * 2);
+        ctx.fill();
+        break;
     }
   };
 
@@ -531,6 +671,27 @@ export const GameCanvas = () => {
         mario.vy = JUMP_FORCE;
         mario.grounded = false;
         playSound('jump');
+      }
+
+      // Fireball shooting (X key)
+      if (newState.keys.has('KeyX') && mario.fire) {
+        // Check if we can shoot (prevent rapid fire)
+        const lastFireball = objects.find(obj => obj.type === 'fireball');
+        if (!lastFireball || Math.abs(lastFireball.x - mario.x) > 100) {
+          const fireball: GameObject = {
+            x: mario.x + (mario.vx > 0 ? mario.width : -16),
+            y: mario.y + mario.height / 2,
+            width: 8,
+            height: 8,
+            type: 'fireball',
+            active: true,
+            vx: mario.vx > 0 ? 8 : mario.vx < 0 ? -8 : 8,
+            vy: -2,
+            bounce: 3
+          };
+          objects.push(fireball);
+          playSound('powerup');
+        }
       }
 
       // Apply gravity
@@ -581,6 +742,37 @@ export const GameCanvas = () => {
                 objects.push(mushroom);
                 console.log('Mushroom spawned at:', mushroom.x, mushroom.y);
                 playSound('powerup');
+              } else if (obj.x === 768) {
+                // Third question block spawns fire flower if Mario is big
+                if (mario.big && !mario.fire) {
+                  console.log('Spawning fire flower...');
+                  const fireflower: GameObject = {
+                    x: obj.x,
+                    y: obj.y - 20,
+                    width: 16,
+                    height: 16,
+                    type: 'fireflower',
+                    active: true,
+                    vy: -2
+                  };
+                  objects.push(fireflower);
+                  playSound('powerup');
+                } else {
+                  // Spawn mushroom if Mario is small
+                  console.log('Spawning mushroom instead...');
+                  const mushroom: GameObject = {
+                    x: obj.x,
+                    y: obj.y - 20,
+                    width: 16,
+                    height: 16,
+                    type: 'mushroom',
+                    active: true,
+                    vx: 1.5,
+                    vy: -2
+                  };
+                  objects.push(mushroom);
+                  playSound('powerup');
+                }
               } else {
                 // Other blocks spawn coins or mushrooms randomly
                 if (Math.random() < 0.3) {
@@ -771,10 +963,38 @@ export const GameCanvas = () => {
               playSound('powerup');
               break;
               
+            case 'fireflower':
+              obj.active = false;
+              if (mario.big) {
+                mario.fire = true;
+              } else {
+                // If small Mario gets fire flower, he becomes big first
+                mario.big = true;
+                mario.height = 28;
+                mario.y -= 8;
+              }
+              newState.score += 1000;
+              playSound('powerup');
+              break;
             case 'flag':
-              newState.gameWon = true;
-              newState.gameRunning = false;
-              newState.score += 5000;
+              // Transition to world 1-2 or complete game
+              if (newState.currentLevel === 1) {
+                // Go to world 1-2
+                initializeWorld2();
+                newState.currentLevel = 2;
+                mario.x = 50;
+                mario.y = 300;
+                mario.vx = 0;
+                mario.vy = 0;
+                newState.camera.x = 0;
+                newState.score += 5000;
+                playSound('powerup');
+              } else {
+                // Complete the game
+                newState.gameWon = true;
+                newState.gameRunning = false;
+                newState.score += 5000;
+              }
               break;
           }
         }
@@ -810,6 +1030,52 @@ export const GameCanvas = () => {
           // Remove coin after it falls for a while or goes off screen
           if (obj.y > 450 || (obj.vy && obj.vy > 5)) {
             obj.active = false;
+          }
+        }
+
+        // Update fireballs
+        if (obj.type === 'fireball' && obj.active) {
+          obj.x += obj.vx || 0;
+          obj.vy = (obj.vy || 0) + GRAVITY * 0.3; // Lighter gravity for fireballs
+          obj.y += obj.vy || 0;
+          
+          // Bounce off ground
+          if (obj.y + obj.height >= 368) {
+            obj.y = 368 - obj.height;
+            obj.vy = -Math.abs(obj.vy || 0) * 0.7; // Bounce with decay
+            obj.bounce = (obj.bounce || 0) - 1;
+            
+            // Remove fireball after bounces
+            if (obj.bounce <= 0) {
+              obj.active = false;
+            }
+          }
+          
+          // Remove if off screen
+          if (obj.x < -50 || obj.x > 2000) {
+            obj.active = false;
+          }
+          
+          // Check fireball collision with enemies
+          objects.forEach(enemy => {
+            if (enemy.type === 'goomba' && enemy.active && checkCollision(obj, enemy)) {
+              enemy.active = false;
+              obj.active = false;
+              newState.score += 100;
+              playSound('stomp');
+            }
+          });
+        }
+
+        // Update fire flowers with physics
+        if (obj.type === 'fireflower' && obj.active) {
+          obj.vy = (obj.vy || 0) + GRAVITY;
+          obj.y += obj.vy || 0;
+          
+          // Ground collision for fire flowers
+          if (obj.y + obj.height >= 368) {
+            obj.y = 368 - obj.height;
+            obj.vy = 0;
           }
         }
       });
