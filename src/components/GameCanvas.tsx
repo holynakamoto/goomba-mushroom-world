@@ -39,6 +39,8 @@ interface GameState {
   keys: Set<string>;
   currentLevel: number;
   time: number;
+  flagSliding: boolean;
+  flagAnimationProgress: number;
 }
 
 const CANVAS_WIDTH = 800;
@@ -80,7 +82,9 @@ export const GameCanvas = () => {
     gameOver: false,
     keys: new Set(),
     currentLevel: 1,
-    time: 400
+    time: 400,
+    flagSliding: false,
+    flagAnimationProgress: 0
   });
 
   // Background music
@@ -257,7 +261,9 @@ export const GameCanvas = () => {
       gameOver: false,
       keys: new Set(),
       currentLevel: 1,
-      time: 400
+      time: 400,
+      flagSliding: false,
+      flagAnimationProgress: 0
     }));
   }, []);
 
@@ -382,7 +388,9 @@ export const GameCanvas = () => {
       camera: { x: 0, y: 0 },
       gameRunning: true,
       currentLevel: 2,
-      time: 400
+      time: 400,
+      flagSliding: false,
+      flagAnimationProgress: 0
     }));
   }, []);
 
@@ -532,14 +540,34 @@ export const GameCanvas = () => {
         
       case 'flag':
         // Flag pole
-        ctx.fillStyle = '#654321';
+        ctx.fillStyle = '#228B22';
         ctx.fillRect(screenX + 14, screenY, 4, obj.height);
         
         // Flag
-        ctx.fillStyle = '#E74C3C';
+        ctx.fillStyle = '#FF6B6B';
         ctx.fillRect(screenX - 8, screenY, 24, 16);
         
-        // Castle at base
+        // Castle (draw to the right of flag)
+        const castleX = screenX + obj.width + 20;
+        const castleY = screenY + obj.height - 80;
+        
+        // Castle base
+        ctx.fillStyle = '#654321';
+        ctx.fillRect(castleX, castleY, 80, 80);
+        
+        // Castle towers
+        ctx.fillRect(castleX - 10, castleY - 20, 20, 100);
+        ctx.fillRect(castleX + 70, castleY - 20, 20, 100);
+        
+        // Castle door
+        ctx.fillStyle = '#2F1B14';
+        ctx.fillRect(castleX + 30, castleY + 40, 20, 40);
+        
+        // Castle windows
+        ctx.fillStyle = '#F39C12';
+        ctx.fillRect(castleX + 15, castleY + 20, 8, 8);
+        ctx.fillRect(castleX + 57, castleY + 20, 8, 8);
+        break;
         ctx.fillStyle = '#708090';
         ctx.fillRect(screenX + 20, screenY + obj.height - 32, 24, 32);
         ctx.fillRect(screenX + 16, screenY + obj.height - 40, 32, 8);
@@ -783,7 +811,46 @@ export const GameCanvas = () => {
         mario.invincible--;
       }
 
-      // Handle input
+      // Handle flag sliding animation first
+      if (newState.flagSliding) {
+        newState.flagAnimationProgress += 1;
+        
+        if (newState.flagAnimationProgress < 120) {
+          // Slide down the flag pole
+          mario.y += 1.5;
+          mario.x = objects.find(obj => obj.type === 'flag')?.x + 24 || mario.x; // Stay on pole
+        } else if (newState.flagAnimationProgress < 180) {
+          // Move toward castle entrance
+          mario.x += 2;
+          if (mario.y < 336) { // Make sure Mario is on ground
+            mario.y = 336;
+          }
+        } else if (newState.flagAnimationProgress < 240) {
+          // Enter castle (fade out)
+          // Keep Mario in place
+        } else {
+          // Transition to next level
+          if (newState.currentLevel === 1) {
+            setTimeout(() => {
+              initializeWorld2();
+            }, 100);
+            newState.score += 5000;
+          } else {
+            newState.gameWon = true;
+            newState.gameRunning = false;
+            newState.score += 5000;
+          }
+        }
+        
+        // Don't apply normal physics/controls during flag animation
+        mario.vy = 0;
+        mario.grounded = true;
+        newState.mario = mario;
+        newState.objects = objects;
+        return newState;
+      }
+
+      // Handle input (only when not flag sliding)
       if (newState.keys.has('ArrowLeft') || newState.keys.has('KeyA')) {
         mario.vx = -MARIO_SPEED;
       } else if (newState.keys.has('ArrowRight') || newState.keys.has('KeyD')) {
@@ -827,9 +894,45 @@ export const GameCanvas = () => {
       const prevX = mario.x;
       const prevY = mario.y;
 
-      // Update Mario position
-      mario.x += mario.vx;
-      mario.y += mario.vy;
+      // Handle flag sliding animation
+      if (newState.flagSliding) {
+        newState.flagAnimationProgress += 1;
+        
+        if (newState.flagAnimationProgress < 120) {
+          // Slide down the flag pole
+          mario.y += 1.5;
+          mario.x = objects.find(obj => obj.type === 'flag')?.x + 24 || mario.x; // Stay on pole
+        } else if (newState.flagAnimationProgress < 180) {
+          // Move toward castle entrance
+          mario.x += 2;
+          if (mario.y < 336) { // Make sure Mario is on ground
+            mario.y = 336;
+          }
+        } else if (newState.flagAnimationProgress < 240) {
+          // Enter castle (fade out)
+          // Keep Mario in place
+        } else {
+          // Transition to next level
+          if (newState.currentLevel === 1) {
+            setTimeout(() => {
+              initializeWorld2();
+            }, 100);
+            newState.score += 5000;
+          } else {
+            newState.gameWon = true;
+            newState.gameRunning = false;
+            newState.score += 5000;
+          }
+        }
+        
+        // Don't apply normal physics during flag animation
+        mario.vy = 0;
+        mario.grounded = true;
+      } else {
+        // Normal Mario movement
+        mario.x += mario.vx;
+        mario.y += mario.vy;
+      }
 
       // Check collision with solid objects (ground, pipes, blocks)
       let onGround = false;
@@ -1432,19 +1535,14 @@ export const GameCanvas = () => {
               break;
 
             case 'flag':
-              // Transition to next level or complete game
-              if (newState.currentLevel === 1) {
-                // Go to world 1-2
-                setTimeout(() => {
-                  initializeWorld2();
-                }, 1000);
-                newState.score += 5000;
+              // Start flag sliding animation
+              if (!newState.flagSliding) {
+                newState.flagSliding = true;
+                newState.flagAnimationProgress = 0;
+                mario.vx = 0;
+                mario.vy = 0;
+                mario.x = obj.x + obj.width - 8; // Position Mario on flag pole
                 playSound('powerup');
-              } else {
-                // Complete the game
-                newState.gameWon = true;
-                newState.gameRunning = false;
-                newState.score += 5000;
               }
               break;
           }
@@ -1525,8 +1623,15 @@ export const GameCanvas = () => {
       }
     });
 
-    // Draw Mario
-    drawMario(ctx, gameState.mario, gameState.camera);
+    // Draw Mario (with special effects during flag sequence)
+    if (gameState.flagSliding && gameState.flagAnimationProgress >= 180 && gameState.flagAnimationProgress < 240) {
+      // Fade Mario during castle entry
+      ctx.globalAlpha = 1 - ((gameState.flagAnimationProgress - 180) / 60);
+      drawMario(ctx, gameState.mario, gameState.camera);
+      ctx.globalAlpha = 1;
+    } else {
+      drawMario(ctx, gameState.mario, gameState.camera);
+    }
 
     // Draw UI with better styling
     ctx.fillStyle = '#000000';
