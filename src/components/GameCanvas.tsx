@@ -402,6 +402,22 @@ export const GameCanvas = () => {
            obj1.y + obj1.height > obj2.y;
   };
 
+  // Enhanced collision detection for flag with larger area
+  const checkFlagCollision = (mario: GameObject, flag: GameObject) => {
+    // Expand the flag collision area by 20 pixels on each side
+    const expandedFlag = {
+      x: flag.x - 20,
+      y: flag.y,
+      width: flag.width + 40,
+      height: flag.height
+    };
+    
+    return mario.x < expandedFlag.x + expandedFlag.width &&
+           mario.x + mario.width > expandedFlag.x &&
+           mario.y < expandedFlag.y + expandedFlag.height &&
+           mario.y + mario.height > expandedFlag.y;
+  };
+
   // Enhanced Mario drawing
   const drawMario = (ctx: CanvasRenderingContext2D, mario: GameObject, camera: { x: number; y: number }) => {
     const screenX = mario.x - camera.x;
@@ -567,10 +583,6 @@ export const GameCanvas = () => {
         ctx.fillStyle = '#F39C12';
         ctx.fillRect(castleX + 15, castleY + 20, 8, 8);
         ctx.fillRect(castleX + 57, castleY + 20, 8, 8);
-        break;
-        ctx.fillStyle = '#708090';
-        ctx.fillRect(screenX + 20, screenY + obj.height - 32, 24, 32);
-        ctx.fillRect(screenX + 16, screenY + obj.height - 40, 32, 8);
         break;
         
       case 'mushroom':
@@ -1349,7 +1361,14 @@ export const GameCanvas = () => {
       objects.forEach((obj, index) => {
         if (!obj.active) return;
 
-        const collision = checkCollision(mario, obj);
+        let collision = false;
+        
+        // Special collision detection for flag
+        if (obj.type === 'flag') {
+          collision = checkFlagCollision(mario, obj);
+        } else {
+          collision = checkCollision(mario, obj);
+        }
 
         if (collision) {
           switch (obj.type) {
@@ -1535,7 +1554,7 @@ export const GameCanvas = () => {
               break;
 
             case 'flag':
-              // Start flag sliding animation on any collision with flag
+              // Start flag sliding animation on any collision with expanded flag area
               if (!newState.flagSliding) {
                 newState.flagSliding = true;
                 newState.flagAnimationProgress = 0;
