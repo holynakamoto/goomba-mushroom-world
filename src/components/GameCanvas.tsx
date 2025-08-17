@@ -96,8 +96,10 @@ export const GameCanvas = () => {
     
     const notes = gameState.currentLevel === 2 ? 
       [330, 330, 0, 330, 0, 262, 330, 0, 392] : // Underground theme
+      gameState.currentLevel === 3 ?
+      [523, 659, 784, 659, 523, 659, 784] : // Tree-top theme (higher pitched)
       [659, 659, 0, 659, 0, 523, 659, 0, 784]; // Overworld theme
-    const noteDuration = gameState.currentLevel === 2 ? 0.4 : 0.3;
+    const noteDuration = gameState.currentLevel === 2 ? 0.4 : gameState.currentLevel === 3 ? 0.25 : 0.3;
     let currentNote = 0;
     
     const playNote = () => {
@@ -388,6 +390,160 @@ export const GameCanvas = () => {
       camera: { x: 0, y: 0 },
       gameRunning: true,
       currentLevel: 2,
+      time: 400,
+      flagSliding: false,
+      flagAnimationProgress: 0
+    }));
+  }, []);
+
+  // Initialize World 1-3 (Tree-top level)
+  const initializeWorld3 = useCallback(() => {
+    const levelObjects: GameObject[] = [
+      // Ground blocks (fewer than overworld, tree-top style)
+      ...Array.from({ length: 15 }, (_, i) => ({
+        x: i * 32,
+        y: 368,
+        width: 32,
+        height: 32,
+        type: 'ground' as const,
+        active: true,
+        solid: true
+      })),
+      
+      // Tree platforms (floating platforms at different heights)
+      ...Array.from({ length: 8 }, (_, i) => ({
+        x: 160 + i * 32,
+        y: 304,
+        width: 32,
+        height: 16,
+        type: 'brick' as const,
+        active: true,
+        solid: true
+      })),
+      
+      ...Array.from({ length: 6 }, (_, i) => ({
+        x: 400 + i * 32,
+        y: 240,
+        width: 32,
+        height: 16,
+        type: 'brick' as const,
+        active: true,
+        solid: true
+      })),
+      
+      ...Array.from({ length: 7 }, (_, i) => ({
+        x: 640 + i * 32,
+        y: 176,
+        width: 32,
+        height: 16,
+        type: 'brick' as const,
+        active: true,
+        solid: true
+      })),
+      
+      ...Array.from({ length: 5 }, (_, i) => ({
+        x: 896 + i * 32,
+        y: 240,
+        width: 32,
+        height: 16,
+        type: 'brick' as const,
+        active: true,
+        solid: true
+      })),
+      
+      ...Array.from({ length: 6 }, (_, i) => ({
+        x: 1120 + i * 32,
+        y: 304,
+        width: 32,
+        height: 16,
+        type: 'brick' as const,
+        active: true,
+        solid: true
+      })),
+      
+      // High platforms near the end
+      ...Array.from({ length: 4 }, (_, i) => ({
+        x: 1360 + i * 32,
+        y: 144,
+        width: 32,
+        height: 16,
+        type: 'brick' as const,
+        active: true,
+        solid: true
+      })),
+      
+      // Question blocks with power-ups on platforms
+      { x: 224, y: 272, width: 32, height: 32, type: 'block', active: true, solid: true },
+      { x: 464, y: 208, width: 32, height: 32, type: 'block', active: true, solid: true },
+      { x: 704, y: 144, width: 32, height: 32, type: 'block', active: true, solid: true },
+      { x: 928, y: 208, width: 32, height: 32, type: 'block', active: true, solid: true },
+      { x: 1184, y: 272, width: 32, height: 32, type: 'block', active: true, solid: true },
+      
+      // Moving elevators between platforms
+      { x: 320, y: 272, width: 48, height: 16, type: 'elevator', active: true, vy: -0.8, minY: 200, maxY: 272, moving: true },
+      { x: 576, y: 208, width: 48, height: 16, type: 'elevator', active: true, vy: 0.8, minY: 144, maxY: 208, moving: true },
+      { x: 832, y: 176, width: 48, height: 16, type: 'elevator', active: true, vy: -0.8, minY: 112, maxY: 240, moving: true },
+      { x: 1056, y: 240, width: 48, height: 16, type: 'elevator', active: true, vy: 0.8, minY: 176, maxY: 304, moving: true },
+      
+      // Koopa Troopas on platforms (more challenging enemies for tree-top level)
+      { x: 200, y: 284, width: 20, height: 20, type: 'koopa', active: true, vx: -1, direction: -1, shell: false },
+      { x: 440, y: 220, width: 20, height: 20, type: 'koopa', active: true, vx: 1, direction: 1, shell: false },
+      { x: 680, y: 156, width: 20, height: 20, type: 'koopa', active: true, vx: -1, direction: -1, shell: false },
+      { x: 920, y: 220, width: 20, height: 20, type: 'koopa', active: true, vx: 1, direction: 1, shell: false },
+      { x: 1160, y: 284, width: 20, height: 20, type: 'koopa', active: true, vx: -1, direction: -1, shell: false },
+      
+      // Some Goombas on ground level and platforms
+      { x: 120, y: 336, width: 20, height: 20, type: 'goomba', active: true, vx: GOOMBA_SPEED, direction: 1 },
+      { x: 280, y: 284, width: 20, height: 20, type: 'goomba', active: true, vx: -GOOMBA_SPEED, direction: -1 },
+      { x: 520, y: 220, width: 20, height: 20, type: 'goomba', active: true, vx: GOOMBA_SPEED, direction: 1 },
+      { x: 760, y: 156, width: 20, height: 20, type: 'goomba', active: true, vx: -GOOMBA_SPEED, direction: -1 },
+      { x: 1000, y: 220, width: 20, height: 20, type: 'goomba', active: true, vx: GOOMBA_SPEED, direction: 1 },
+      
+      // Coins scattered throughout the level (bonus for skilled jumping)
+      { x: 240, y: 240, width: 16, height: 16, type: 'coin', active: true },
+      { x: 480, y: 176, width: 16, height: 16, type: 'coin', active: true },
+      { x: 720, y: 112, width: 16, height: 16, type: 'coin', active: true },
+      { x: 752, y: 112, width: 16, height: 16, type: 'coin', active: true },
+      { x: 784, y: 112, width: 16, height: 16, type: 'coin', active: true },
+      { x: 944, y: 176, width: 16, height: 16, type: 'coin', active: true },
+      { x: 1200, y: 240, width: 16, height: 16, type: 'coin', active: true },
+      { x: 1376, y: 112, width: 16, height: 16, type: 'coin', active: true },
+      { x: 1408, y: 112, width: 16, height: 16, type: 'coin', active: true },
+      
+      // Final ground section with flag
+      ...Array.from({ length: 10 }, (_, i) => ({
+        x: 1500 + i * 32,
+        y: 368,
+        width: 32,
+        height: 32,
+        type: 'ground' as const,
+        active: true,
+        solid: true
+      })),
+      
+      // Flag at the end
+      { x: 1600, y: 200, width: 32, height: 168, type: 'flag', active: true, solid: true },
+    ];
+
+    setGameState(prev => ({
+      ...prev,
+      objects: levelObjects,
+      mario: {
+        ...prev.mario,
+        x: 50,
+        y: 300,
+        vx: 0,
+        vy: 0,
+        grounded: false,
+        big: false,
+        fire: false,
+        width: 20,
+        height: 20,
+        invincible: 0
+      },
+      camera: { x: 0, y: 0 },
+      gameRunning: true,
+      currentLevel: 3,
       time: 400,
       flagSliding: false,
       flagAnimationProgress: 0
@@ -1747,8 +1903,14 @@ export const GameCanvas = () => {
     };
   }, []);
 
-  const startGame = () => {
-    initializeLevel();
+  const startGame = (level: number = 1) => {
+    if (level === 1) {
+      initializeLevel();
+    } else if (level === 2) {
+      initializeWorld2();
+    } else if (level === 3) {
+      initializeWorld3();
+    }
     playBackgroundMusic();
   };
 
@@ -1770,13 +1932,29 @@ export const GameCanvas = () => {
     <div className="flex flex-col items-center gap-4">
       <Card className="p-4 bg-game-ui-bg border-game-ui-border">
         <div className="flex gap-4 mb-4">
-          <Button 
-            onClick={startGame} 
-            className="btn-8bit"
-            disabled={gameState.gameRunning}
-          >
-            Start Game
-          </Button>
+          <div className="flex gap-2">
+            <Button 
+              onClick={() => startGame(1)} 
+              className="btn-8bit"
+              disabled={gameState.gameRunning}
+            >
+              World 1-1
+            </Button>
+            <Button 
+              onClick={() => startGame(2)} 
+              className="btn-8bit bg-mario-brown"
+              disabled={gameState.gameRunning}
+            >
+              World 1-2
+            </Button>
+            <Button 
+              onClick={() => startGame(3)} 
+              className="btn-8bit bg-mario-green"
+              disabled={gameState.gameRunning}
+            >
+              World 1-3
+            </Button>
+          </div>
           <Button 
             onClick={resetGame} 
             className="btn-8bit bg-mario-blue"
@@ -1795,9 +1973,9 @@ export const GameCanvas = () => {
         <div className="mt-4 text-center pixel-font text-mario-white">
           <p>🎮 Arrow Keys or WASD to move • Space/W/↑ to jump • X to shoot fireballs (Fire Mario only)</p>
           <p>🍄 Stomp Goombas • Collect Mushrooms and Coins • Break bricks as Big Mario • Reach the Flag!</p>
-          <p>🎵 Enhanced with brick breaking, Mario shrinking, fireball shooting, and World 1-2!</p>
+          <p>🎵 Enhanced with World 1-1 (Overworld), World 1-2 (Underground), and World 1-3 (Tree-tops)!</p>
           {!gameState.gameRunning && !gameState.gameWon && !gameState.gameOver && (
-            <p className="mt-2 text-mario-yellow animate-pulse">🚀 Press Start Game to begin your enhanced adventure!</p>
+            <p className="mt-2 text-mario-yellow animate-pulse">🚀 Choose a world to begin your enhanced adventure!</p>
           )}
         </div>
       </Card>

@@ -8,10 +8,10 @@ const Index = () => {
           SUPER MARIO BROS
         </h1>
         <h2 className="text-3xl pixel-font text-mario-yellow mb-4">
-          World 1-1: Goomba & Mushroom Edition
+          World 1-1, 1-2 & 1-3: Complete Adventure Edition
         </h2>
         <p className="text-lg pixel-font text-mario-white">
-          A recreation of the classic first level with enhanced Goomba and Mushroom gameplay!
+          Experience all three classic levels: Overworld, Underground, and Tree-tops!
         </p>
       </div>
       
