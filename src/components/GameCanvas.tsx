@@ -1535,8 +1535,8 @@ export const GameCanvas = () => {
               break;
 
             case 'flag':
-              // Start flag sliding animation only if Mario is jumping on top of the flag
-              if (!newState.flagSliding && mario.vy > 0 && mario.y < obj.y + obj.height / 2) {
+              // Start flag sliding animation on any collision with flag
+              if (!newState.flagSliding) {
                 newState.flagSliding = true;
                 newState.flagAnimationProgress = 0;
                 mario.vx = 0;
