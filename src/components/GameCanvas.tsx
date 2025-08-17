@@ -1535,13 +1535,13 @@ export const GameCanvas = () => {
               break;
 
             case 'flag':
-              // Start flag sliding animation
-              if (!newState.flagSliding) {
+              // Start flag sliding animation only if Mario is jumping on top of the flag
+              if (!newState.flagSliding && mario.vy > 0 && mario.y < obj.y + obj.height / 2) {
                 newState.flagSliding = true;
                 newState.flagAnimationProgress = 0;
                 mario.vx = 0;
                 mario.vy = 0;
-                mario.x = obj.x + obj.width - 8; // Position Mario on flag pole
+                mario.x = obj.x + 16; // Position Mario on flag pole (center)
                 playSound('powerup');
               }
               break;
